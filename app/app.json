@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "mysetup",
+    "slug": "mysetup",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mysetup.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F0F0F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.mysetup.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow mysetup to access your camera to scan your desk setup."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow mysetup to access your photos to scan your desk setup."
+        }
+      ]
+    ]
+  }
+}
