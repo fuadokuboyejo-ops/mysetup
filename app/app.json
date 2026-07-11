@@ -34,7 +34,8 @@
         {
           "photosPermission": "Allow mysetup to access your photos to scan your desk setup."
         }
-      ]
+      ],
+      "expo-video"
     ]
   }
 }

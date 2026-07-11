@@ -4,3 +4,6 @@ node_modules/
 .expo/
 uploads/
 .DS_Store
+
+# Generated wallpaper renders
+server/output/
