@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Image, Animated, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Image, Animated, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
-import { getGenerationsUsed, getGenerationHistory, GENERATIONS_LIMIT } from '../config/setup';
+import * as ImagePicker from 'expo-image-picker';
+import { getGenerationsUsed, getGenerationHistory, getSetups, GENERATIONS_LIMIT } from '../config/setup';
 
 const RING_SIZE = 60;
 const RING_STROKE = 6;
@@ -72,14 +73,60 @@ function OptionCard({ image, title, body, onPress }) {
   );
 }
 
+const GEAR_OPTIONS = [
+  {
+    key: 'camera-roll',
+    image: require('../assets/desk_airevamp.png'),
+    title: 'Get photo from camera roll',
+    body: 'Pick an existing photo.',
+  },
+  {
+    key: 'take-photo',
+    image: require('../assets/chair_airevamp.png'),
+    title: 'Take photo of setup',
+    body: 'Snap a fresh photo now.',
+  },
+  {
+    key: 'from-setup',
+    image: require('../assets/iem_airevamp.png'),
+    title: 'Select photo from current setup',
+    body: 'Use a photo from one of your saved setups.',
+  },
+];
+
+// Same white-card + black-border + hard-offset-shadow treatment as OptionCard
+// above, sized down for the bottom-sheet chooser rows.
+function GearOptionCard({ image, title, body, onPress }) {
+  return (
+    <View style={styles.gearCardWrap}>
+      <View style={styles.gearCardHardShadow} />
+      <TouchableOpacity style={styles.gearCard} onPress={onPress} activeOpacity={0.8}>
+        <View style={styles.gearCardInfo}>
+          <Text style={styles.gearCardTitle}>{title}</Text>
+          <Text style={styles.gearCardBody}>{body}</Text>
+        </View>
+        <View style={styles.gearCardArt}>
+          <Image source={image} style={styles.gearCardArtImage} resizeMode="contain" />
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDifferentGear, onExistingSetup }) {
   const [generationsUsed, setGenerationsUsed] = useState(0);
   const [history, setHistory] = useState([]);
   const [previewImage, setPreviewImage] = useState(null);
+  // Photo-source chooser for "Try different gear": null (closed) → 'menu'
+  // (the three source options) → 'setups' (pick one of your saved setups).
+  const [gearMode, setGearMode] = useState(null);
+  const [photoSetups, setPhotoSetups] = useState([]);
   const statTranslate = useRef(new Animated.Value(500)).current;
   const statOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(OPTIONS.map(() => new Animated.Value(60))).current;
   const cardOpacity = useRef(OPTIONS.map(() => new Animated.Value(0))).current;
+  const gearCardTranslate = useRef(GEAR_OPTIONS.map(() => new Animated.Value(40))).current;
+  const gearCardOpacity = useRef(GEAR_OPTIONS.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     getGenerationsUsed().then(setGenerationsUsed);
@@ -94,9 +141,64 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
     ]))).start();
   }, []);
 
+  // Staggered fade + slide-up for the gear chooser cards, replayed each time
+  // the three-option menu is shown (first open, and coming back from 'setups').
+  const animateGearCards = () => {
+    gearCardTranslate.forEach(v => v.setValue(40));
+    gearCardOpacity.forEach(v => v.setValue(0));
+    Animated.stagger(90, GEAR_OPTIONS.map((_, i) => Animated.parallel([
+      Animated.spring(gearCardTranslate[i], { toValue: 0, friction: 8, useNativeDriver: true }),
+      Animated.timing(gearCardOpacity[i], { toValue: 1, duration: 280, useNativeDriver: true }),
+    ]))).start();
+  };
+
+  // "Try different gear" starts from a photo of the user's setup — open the
+  // source chooser rather than jumping straight into the revamp screen.
+  const openGearSheet = async () => {
+    setGearMode('menu');
+    animateGearCards();
+    try {
+      const sts = await getSetups();
+      setPhotoSetups(sts.filter(s => s.photo));
+    } catch { setPhotoSetups([]); }
+  };
+
+  const finishGear = (photo) => {
+    setGearMode(null);
+    onDifferentGear(photo);
+  };
+
+  const pickFromCameraRoll = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo library access to pick a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], quality: 0.5, base64: true, allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      finishGear({ uri: result.assets[0].uri, base64: result.assets[0].base64 });
+    }
+  };
+
+  const takePhotoOfSetup = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow camera access to take a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.5, base64: true, allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      finishGear({ uri: result.assets[0].uri, base64: result.assets[0].base64 });
+    }
+  };
+
   const handlers = {
     scratch: onDesignFromScratch,
-    'different-gear': onDifferentGear,
+    'different-gear': openGearSheet,
     'existing-setup': onExistingSetup,
   };
 
@@ -171,6 +273,71 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
       <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
         <TouchableOpacity style={styles.previewOverlay} activeOpacity={1} onPress={() => setPreviewImage(null)}>
           <Image source={{ uri: `data:image/jpeg;base64,${previewImage}` }} style={styles.previewFullImage} resizeMode="contain" />
+        </TouchableOpacity>
+      </Modal>
+
+      {/* "Try different gear" photo-source chooser */}
+      <Modal visible={gearMode !== null} transparent animationType="slide" onRequestClose={() => setGearMode(null)}>
+        <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setGearMode(null)}>
+          <TouchableOpacity style={styles.sheet} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+
+            {gearMode === 'menu' ? (
+              <>
+                <Text style={styles.sheetTitle}>Try different gear</Text>
+                <Text style={styles.sheetSub}>Start from a photo of your setup.</Text>
+
+                <View style={styles.gearList}>
+                  {GEAR_OPTIONS.map((o, i) => (
+                    <Animated.View
+                      key={o.key}
+                      style={{ opacity: gearCardOpacity[i], transform: [{ translateY: gearCardTranslate[i] }] }}
+                    >
+                      <GearOptionCard
+                        image={o.image}
+                        title={o.title}
+                        body={o.body}
+                        onPress={
+                          o.key === 'camera-roll' ? pickFromCameraRoll
+                            : o.key === 'take-photo' ? takePhotoOfSetup
+                              : () => setGearMode('setups')
+                        }
+                      />
+                    </Animated.View>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sheetTitle}>Choose a setup photo</Text>
+                {photoSetups.length === 0 ? (
+                  <Text style={styles.gearEmpty}>None of your saved setups have a photo yet.</Text>
+                ) : (
+                  <ScrollView style={styles.gearSetupList} showsVerticalScrollIndicator={false}>
+                    {photoSetups.map(s => (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={styles.gearSetupRow}
+                        onPress={() => finishGear({ uri: `data:image/jpeg;base64,${s.photo}`, base64: s.photo })}
+                        activeOpacity={0.8}
+                      >
+                        <Image source={{ uri: `data:image/jpeg;base64,${s.photo}` }} style={styles.gearSetupThumb} resizeMode="cover" />
+                        <Text style={styles.gearSetupName} numberOfLines={1}>{s.name}</Text>
+                        <Text style={styles.gearChevron}>›</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+                <TouchableOpacity
+                  onPress={() => { setGearMode('menu'); animateGearCards(); }}
+                  activeOpacity={0.7}
+                  style={styles.gearBackBtn}
+                >
+                  <Text style={styles.gearBack}>‹ Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </View>
@@ -263,4 +430,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   cardArtImage: { width: '100%', height: 82 },
+
+  // "Try different gear" bottom-sheet chooser
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 12 },
+  sheetTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  sheetSub: { color: C.sub, fontSize: 13, marginTop: 3, marginBottom: 12 },
+
+  gearList: { gap: 14, marginTop: 4 },
+
+  // Same white-card + black-border + hard-offset-shadow treatment as the
+  // OptionCard above, sized down for the sheet.
+  gearCardWrap: { position: 'relative' },
+  gearCardHardShadow: {
+    position: 'absolute',
+    top: 3, left: 3, right: -3, bottom: -3,
+    backgroundColor: '#615A78',
+    borderRadius: 14,
+  },
+  gearCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#161616',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  gearCardInfo: { flex: 1, gap: 2 },
+  gearCardTitle: { color: C.text, fontSize: 15, fontWeight: '700' },
+  gearCardBody: { color: C.sub, fontSize: 12.5, lineHeight: 16 },
+  gearCardArt: { width: 76, alignItems: 'center', justifyContent: 'center' },
+  gearCardArtImage: { width: '100%', height: 56 },
+  gearChevron: { color: C.sub, fontSize: 24, fontWeight: '300' },
+
+  gearEmpty: { color: C.sub, fontSize: 14, textAlign: 'center', paddingVertical: 28 },
+  gearSetupList: { maxHeight: 320 },
+  gearSetupRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border,
+  },
+  gearSetupThumb: {
+    width: 52, height: 52, borderRadius: 10,
+    borderWidth: 1.5, borderColor: '#161616', backgroundColor: '#F0EFEA',
+  },
+  gearSetupName: { flex: 1, color: C.text, fontSize: 15, fontWeight: '600' },
+  gearBackBtn: { paddingTop: 16, alignItems: 'center' },
+  gearBack: { color: C.purple, fontSize: 15, fontWeight: '700' },
 });

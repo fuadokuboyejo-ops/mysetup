@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
-  TextInput, SafeAreaView,
+  TextInput, SafeAreaView, StatusBar,
 } from 'react-native';
 import { addSetupItem } from '../config/setup';
 import { API_BASE } from '../config/api';
@@ -66,6 +66,7 @@ export default function ResultsScreen({ items: product, photoUri, photoBase64, s
   if (!product) {
     return (
       <View style={styles.container}>
+        <StatusBar barStyle="dark-content" />
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🔍</Text>
           <Text style={styles.emptyText}>No product data returned.</Text>
@@ -96,6 +97,7 @@ export default function ResultsScreen({ items: product, photoUri, photoBase64, s
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
       <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -137,7 +139,7 @@ export default function ResultsScreen({ items: product, photoUri, photoBase64, s
           >
             {adding ? (
               <View style={styles.row}>
-                <ActivityIndicator color="#0F0F0F" size="small" />
+                <ActivityIndicator color="#FFFFFF" size="small" />
                 <Text style={styles.addText}>Adding to Setup…</Text>
               </View>
             ) : (
@@ -260,12 +262,12 @@ function QuickChip({ label, selected, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0F0F' },
-  thumbnail: { width: '100%', height: 220, position: 'absolute', top: 0 },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  thumbnail: { width: '100%', height: 220, position: 'absolute', top: 0, backgroundColor: '#FFFFFF' },
 
   scroll: { flex: 1, marginTop: 200 },
   scrollContent: {
-    backgroundColor: '#0F0F0F',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -274,40 +276,40 @@ const styles = StyleSheet.create({
   },
 
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  brand: { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
-  productName: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  category: { color: '#666', fontSize: 13, marginTop: 2 },
+  brand: { color: '#8A8A8E', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  productName: { color: '#0F0F0F', fontSize: 22, fontWeight: '800' },
+  category: { color: '#8A8A8E', fontSize: 13, marginTop: 2 },
 
   confidenceBadge: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#F0F0F2',
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: 'center',
   },
-  confidenceText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  confidenceLabel: { color: '#666', fontSize: 10 },
+  confidenceText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+  confidenceLabel: { color: '#8A8A8E', fontSize: 10 },
 
   section: { gap: 8 },
-  sectionTitle: { color: '#888', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-  bodyText: { color: '#ccc', fontSize: 14, lineHeight: 20 },
+  sectionTitle: { color: '#8A8A8E', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  bodyText: { color: '#3A3A3C', fontSize: 14, lineHeight: 20 },
   manualCard: {
-    backgroundColor: '#171719',
+    backgroundColor: '#F5F5F7',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#2e2e32',
+    borderColor: '#E3E3E8',
     padding: 14,
     gap: 14,
   },
   fieldGroup: { gap: 10 },
   field: { gap: 7 },
-  fieldLabel: { color: '#888', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  fieldLabel: { color: '#8A8A8E', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   input: {
-    backgroundColor: '#222226',
+    backgroundColor: '#F0F0F2',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#34343a',
-    color: '#fff',
+    borderColor: '#D8D8DC',
+    color: '#0F0F0F',
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 13,
@@ -317,67 +319,67 @@ const styles = StyleSheet.create({
     minHeight: 38,
     paddingHorizontal: 14,
     borderRadius: 19,
-    backgroundColor: '#222226',
+    backgroundColor: '#F0F0F2',
     borderWidth: 1,
-    borderColor: '#34343a',
+    borderColor: '#D8D8DC',
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickChipSelected: {
-    backgroundColor: '#f5f5f7',
-    borderColor: '#f5f5f7',
+    backgroundColor: '#0F0F0F',
+    borderColor: '#0F0F0F',
   },
-  quickChipText: { color: '#b8b8be', fontSize: 13, fontWeight: '600' },
-  quickChipTextSelected: { color: '#0F0F0F' },
+  quickChipText: { color: '#6E6E73', fontSize: 13, fontWeight: '600' },
+  quickChipTextSelected: { color: '#FFFFFF' },
 
   dimsRow: { flexDirection: 'row', gap: 10 },
   dimBox: {
-    flex: 1, backgroundColor: '#1A1A1A', borderRadius: 12,
+    flex: 1, backgroundColor: '#F0F0F2', borderRadius: 12,
     padding: 14, alignItems: 'center', gap: 2,
   },
-  dimLabel: { color: '#555', fontSize: 11, fontWeight: '700' },
-  dimValue: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  dimUnit: { color: '#555', fontSize: 10 },
-  detailsCard: { backgroundColor: '#161616', borderRadius: 16, padding: 18, marginTop: 4, gap: 12 },
+  dimLabel: { color: '#8A8A8E', fontSize: 11, fontWeight: '700' },
+  dimValue: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+  dimUnit: { color: '#8A8A8E', fontSize: 10 },
+  detailsCard: { backgroundColor: '#F5F5F7', borderRadius: 16, padding: 18, marginTop: 4, gap: 12 },
   detailsList: {},
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
-  detailRowBorder: { borderBottomWidth: 1, borderBottomColor: '#242424' },
-  detailLabel: { color: '#777', fontSize: 14 },
-  detailValue: { color: '#fff', fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right', marginLeft: 12 },
+  detailRowBorder: { borderBottomWidth: 1, borderBottomColor: '#E3E3E8' },
+  detailLabel: { color: '#8A8A8E', fontSize: 14 },
+  detailValue: { color: '#0F0F0F', fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right', marginLeft: 12 },
 
   pillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  pill: { backgroundColor: '#1A1A1A', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
-  pillText: { color: '#ccc', fontSize: 13 },
+  pill: { backgroundColor: '#F0F0F2', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
+  pillText: { color: '#3A3A3C', fontSize: 13 },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
   addButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0F0F0F',
     borderRadius: 14,
     paddingVertical: 17,
     alignItems: 'center',
   },
   addedButton: {
-    backgroundColor: '#1A3A1A',
+    backgroundColor: '#E7F5EA',
     borderRadius: 14,
     paddingVertical: 17,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2d6a2d',
+    borderColor: '#B4DEBC',
   },
   buttonDisabled: { opacity: 0.7 },
-  addText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
-  addedText: { color: '#4CAF50', fontSize: 16, fontWeight: '700' },
+  addText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  addedText: { color: '#1E7A34', fontSize: 16, fontWeight: '700' },
 
   againButton: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#F0F0F2',
     borderRadius: 14,
     paddingVertical: 17,
     alignItems: 'center',
   },
-  againText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  againText: { color: '#0F0F0F', fontSize: 16, fontWeight: '600' },
 
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyIcon: { fontSize: 40 },
-  emptyText: { color: '#aaa', fontSize: 16 },
+  emptyText: { color: '#8A8A8E', fontSize: 16 },
 });

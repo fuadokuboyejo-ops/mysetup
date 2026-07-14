@@ -39,6 +39,9 @@ export default function App() {
   // Where the setup screen's back button sends you — normally Profile, but
   // "Arrange board" from the Generate screen should return you there.
   const [afterSetup, setAfterSetup] = useState('profile');
+  // A photo of the user's setup chosen for "Try different gear" (camera roll,
+  // camera, or a saved setup's photo) — null for the "Design from scratch" path.
+  const [revampBasePhoto, setRevampBasePhoto] = useState(null);
 
   useEffect(() => { getIsPremium().then(setIsPremiumState); }, []);
 
@@ -74,6 +77,7 @@ export default function App() {
   };
 
   const designFromScratch = async () => {
+    setRevampBasePhoto(null);
     const setup = await createSetup('My Setup', 'pc');
     setActiveSetup(setup);
     setAfterBoardBuilder('revamp');
@@ -249,7 +253,7 @@ export default function App() {
         <RevampMenuScreen
           onBack={() => setScreen('home')}
           onDesignFromScratch={designFromScratch}
-          onDifferentGear={() => setScreen('revamp')}
+          onDifferentGear={(photo) => { setRevampBasePhoto(photo || null); setScreen('revamp'); }}
           onExistingSetup={() => setScreen('profile')}
         />
       );
@@ -258,6 +262,7 @@ export default function App() {
       return (
         <RevampScreen
           setup={activeSetup}
+          basePhoto={revampBasePhoto}
           onBack={() => setScreen('revamp-menu')}
           onArrangeBoard={arrangeBoard}
         />

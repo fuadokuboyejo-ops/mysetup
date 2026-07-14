@@ -28,7 +28,7 @@ function matchBoard(items, nodes) {
   return slots;
 }
 
-export default function RevampScreen({ onBack, setup, onArrangeBoard }) {
+export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto }) {
   const [items, setItems] = useState([]);
   const [setups, setSetups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +95,9 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard }) {
           category: it.product?.category,
           photo: it.photoBase64,
         })),
+        // "Try different gear" starts from a real photo of the user's setup;
+        // the backend uses it as the base scene to re-render with new gear.
+        basePhoto: basePhoto?.base64 || undefined,
       };
       const res = await fetch(REVAMP_ENDPOINT, {
         method: 'POST',
@@ -193,9 +196,20 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard }) {
 
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           <Text style={styles.sub}>
-            {setup ? 'Your board' : 'Your default PC board'} — we generate a photorealistic setup photo from the items on it.
+            {basePhoto
+              ? 'Your setup photo — pick items on the board below and we’ll re-render it with different gear.'
+              : `${setup ? 'Your board' : 'Your default PC board'} — we generate a photorealistic setup photo from the items on it.`}
           </Text>
           <Text style={styles.genCount}>{generationsUsed} of {GENERATIONS_LIMIT} generations used this month</Text>
+
+          {basePhoto && (
+            <View style={styles.basePhotoWrap}>
+              <Image source={{ uri: basePhoto.uri }} style={styles.basePhotoImg} resizeMode="cover" />
+              <View style={styles.basePhotoTag}>
+                <Text style={styles.basePhotoTagText}>Your setup</Text>
+              </View>
+            </View>
+          )}
 
           {/* Default PC board */}
           <View
@@ -361,6 +375,12 @@ const styles = StyleSheet.create({
   body: { padding: 20, paddingBottom: 60, gap: 16 },
   sub: { color: C.sub, fontSize: 14, lineHeight: 20 },
   genCount: { color: C.sub, fontSize: 12, fontWeight: '600' },
+
+  // Base photo of the user's setup (from "Try different gear")
+  basePhotoWrap: { width: '100%', aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden', backgroundColor: '#F0EFEA', borderWidth: 1.5, borderColor: '#161616', position: 'relative' },
+  basePhotoImg: { width: '100%', height: '100%' },
+  basePhotoTag: { position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(22,22,22,0.85)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  basePhotoTagText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
   // Default PC board
   board: { width: '100%', backgroundColor: '#F0EFEA', borderRadius: 16, position: 'relative' },

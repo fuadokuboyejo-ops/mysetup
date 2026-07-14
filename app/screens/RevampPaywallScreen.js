@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, StatusBar, Alert, ActivityIndicator, Animated, Platform,
+  View, Text, TouchableOpacity, StyleSheet, StatusBar, Alert, ActivityIndicator, Animated, Platform, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -192,17 +192,23 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.hero}>
-          <View style={styles.mascotWrap}>
-            <Image source={MASCOT_LOOP} style={styles.mascot} contentFit="contain" autoplay />
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: introOpacity }]}>
-              <Image source={MASCOT_INTRO} style={styles.mascot} contentFit="contain" autoplay />
-            </Animated.View>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.hero}>
+            <View style={styles.mascotWrap}>
+              <Image source={MASCOT_LOOP} style={styles.mascot} contentFit="contain" autoplay />
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: introOpacity }]}>
+                <Image source={MASCOT_INTRO} style={styles.mascot} contentFit="contain" autoplay />
+              </Animated.View>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.bottomBlock}>
-          <Text style={styles.title}>Access all of AI Revamp</Text>
+          <View style={styles.bottomBlock}>
+            <Text style={styles.title}>Access all of AI Revamp</Text>
 
           <View style={styles.compareCard}>
             <View style={styles.plusColumnBg} />
@@ -242,10 +248,11 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
             </View>
           </View>
 
-          <TouchableOpacity onPress={restore} activeOpacity={0.7}>
-            <Text style={styles.restore}>Restore Subscription</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity onPress={restore} activeOpacity={0.7}>
+              <Text style={styles.restore}>Restore Subscription</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -264,6 +271,8 @@ const C = {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   safe: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
