@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, TextInput, Modal, ActivityIndicator,
+  StyleSheet, Alert, TextInput, Modal, ActivityIndicator, StatusBar,
 } from 'react-native';
 import { getSetups, createSetup, deleteSetup, getAllItems } from '../config/setup';
 import { computeLayout, normalizeNodes, nodeSpan } from '../config/boardLayout';
+import StitchBorder from '../components/StitchBorder';
 
 // Renders a setup's saved custom board — identical grid geometry to the builder
 // and the setup Board tab (shared computeLayout), filled with THIS setup's own
@@ -48,12 +49,18 @@ function BoardPreview({ setup, items }) {
                 resizeMode="contain"
               />
             ) : (
-              <View style={S.previewSlotContent} pointerEvents="none">
-                {!vertical && <Text style={S.previewPlus}>+</Text>}
-                <Text style={[S.previewLabel, vertical && S.previewLabelRotated]} numberOfLines={1}>
-                  {label}
-                </Text>
-              </View>
+              <>
+                <StitchBorder
+                  width={r.w} height={r.h} radius={14}
+                  color="#C7C7CC" strokeWidth={1.3} dash={5} gap={5}
+                />
+                <View style={S.previewSlotContent} pointerEvents="none">
+                  {!vertical && <Text style={S.previewPlus}>+</Text>}
+                  <Text style={[S.previewLabel, vertical && S.previewLabelRotated]} numberOfLines={1}>
+                    {label}
+                  </Text>
+                </View>
+              </>
             )}
           </View>
         );
@@ -127,6 +134,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
 
   return (
     <View style={S.container}>
+      <StatusBar barStyle="dark-content" />
       <View style={S.header}>
         <TouchableOpacity onPress={onBack} style={S.backBtn}>
           <Text style={S.backText}>‹</Text>
@@ -167,7 +175,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
       </View>
 
       {loading ? (
-        <View style={S.center}><ActivityIndicator color="#fff" /></View>
+        <View style={S.center}><ActivityIndicator color={C.accent} /></View>
       ) : (
         <ScrollView contentContainerStyle={S.grid} showsVerticalScrollIndicator={false}>
           {setups.map(setup => {
@@ -219,7 +227,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
                 <TextInput
                   style={S.input}
                   placeholder="e.g. Main Rig, Work Setup, Bedroom..."
-                  placeholderTextColor="#555"
+                  placeholderTextColor="#ADADAD"
                   value={newName}
                   onChangeText={setNewName}
                   autoFocus
@@ -279,7 +287,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   );
 }
 
-const C = { bg: '#0c0c0e', card: '#1a1a1d', border: '#2a2a2e', text: '#f5f5f7', sub: '#8e8e96', slot: '#242428', filled: '#2e2e33' };
+const C = { bg: '#FAFAF8', card: '#FFFFFF', border: '#E0E0E0', text: '#161616', sub: '#6E6E73', slot: '#FAFAFA', filled: '#F0F0F0', accent: '#6D5EF0' };
 
 const S = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
@@ -312,9 +320,9 @@ const S = StyleSheet.create({
 
   // Absolute-positioned grid (gap baked into coordinates via computeLayout), so
   // no padding/gap here — matches the builder + setup Board tab exactly.
-  previewBoard: { backgroundColor: '#111113', marginHorizontal: 12, marginVertical: 12, borderRadius: 16, position: 'relative' },
-  previewSlot: { backgroundColor: C.slot, borderRadius: 14, borderWidth: 1, borderColor: '#424248', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  previewSlotFilled: { backgroundColor: C.filled, borderStyle: 'solid', borderColor: '#3a3a40' },
+  previewBoard: { backgroundColor: C.bg, marginHorizontal: 12, marginVertical: 12, borderRadius: 16, position: 'relative' },
+  previewSlot: { backgroundColor: C.slot, borderRadius: 14, borderWidth: 0, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  previewSlotFilled: { backgroundColor: C.filled, borderStyle: 'solid', borderColor: C.border, borderWidth: 1 },
   previewSlotImage: { width: '85%', height: '80%' },
   previewSlotContent: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   previewPlus: { color: C.sub, fontSize: 16, fontWeight: '300', lineHeight: 18 },
@@ -342,15 +350,15 @@ const S = StyleSheet.create({
   modalTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
   modalSub: { color: C.sub, fontSize: 14, marginTop: -8 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  typeBtn: { width: '47%', paddingVertical: 18, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: '#111113', alignItems: 'center', justifyContent: 'center' },
-  typeBtnActive: { borderColor: '#8fb8f0', backgroundColor: 'rgba(143,184,240,0.1)' },
+  typeBtn: { width: '47%', paddingVertical: 18, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.slot, alignItems: 'center', justifyContent: 'center' },
+  typeBtnActive: { borderColor: C.accent, backgroundColor: 'rgba(109,94,240,0.1)' },
   typeBtnText: { color: C.sub, fontSize: 14, fontWeight: '600' },
-  typeBtnTextActive: { color: '#8fb8f0' },
-  input: { backgroundColor: '#111', borderRadius: 12, borderWidth: 1, borderColor: C.border, color: C.text, fontSize: 15, paddingVertical: 12, paddingHorizontal: 14 },
+  typeBtnTextActive: { color: C.accent },
+  input: { backgroundColor: C.slot, borderRadius: 12, borderWidth: 1, borderColor: C.border, color: C.text, fontSize: 15, paddingVertical: 12, paddingHorizontal: 14 },
   modalBtns: { flexDirection: 'row', gap: 10 },
   cancelBtn: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingVertical: 13, alignItems: 'center' },
   cancelText: { color: C.sub, fontSize: 15 },
-  createBtn: { flex: 1, borderRadius: 12, backgroundColor: '#fff', paddingVertical: 13, alignItems: 'center' },
+  createBtn: { flex: 1, borderRadius: 12, backgroundColor: C.accent, paddingVertical: 13, alignItems: 'center' },
   createBtnDisabled: { opacity: 0.4 },
-  createText: { color: '#0c0c0e', fontSize: 15, fontWeight: '700' },
+  createText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

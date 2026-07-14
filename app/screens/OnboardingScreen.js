@@ -1,15 +1,17 @@
+import { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, SafeAreaView, Platform,
+  StatusBar, Platform, Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { Image } from 'expo-image';
 
-// Light-mode onboarding — "Show off your setup" slide.
-// The hero loops ONLY the seated "typing at the setup" segment of the mascot
-// animation (frames 72–140 of the source), forever. We play it via expo-video
-// (MP4) rather than an animated GIF because core <Image> freezes a GIF after a
-// single play in Expo Go; the video player loops seamlessly and is far lighter.
-const MASCOT = require('../assets/mascot_loop.mp4');
+// Hero plays the full mascot GIF once (intro = frames 1–71, ~2960ms),
+// then seamlessly hands off to the looping MP4 (frames 72–140, ~2910ms).
+const MASCOT_GIF  = require('../assets/mascot.gif');
+const MASCOT_LOOP = require('../assets/mascot_loop.mp4');
+const INTRO_DURATION_MS = 4000;
 
 const TOTAL_SLIDES = 8;
 const ACTIVE_INDEX = 1; // this is slide 2
@@ -36,12 +38,24 @@ function CompareCard({ eyebrow, title, variant }) {
   );
 }
 
+const CROSSFADE_MS = 200;
+
 export default function OnboardingScreen({ onContinue, onBack }) {
-  const player = useVideoPlayer(MASCOT, (p) => {
+  const gifOpacity = useRef(new Animated.Value(1)).current;
+
+  // Start the loop video playing immediately so it's warm when we reveal it.
+  const player = useVideoPlayer(MASCOT_LOOP, (p) => {
     p.loop = true;
     p.muted = true;
     p.play();
   });
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      Animated.timing(gifOpacity, { toValue: 0, duration: CROSSFADE_MS, useNativeDriver: true }).start();
+    }, INTRO_DURATION_MS);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -49,7 +63,7 @@ export default function OnboardingScreen({ onContinue, onBack }) {
       <SafeAreaView style={styles.safe}>
         <Dots />
 
-        {/* Hero — mascot over a purple glow */}
+        {/* Hero — both layers always mounted; opacity swap avoids mount freeze */}
         <View style={styles.hero}>
           <TouchableOpacity
             style={styles.backBtn}
@@ -60,18 +74,30 @@ export default function OnboardingScreen({ onContinue, onBack }) {
             <Text style={styles.backChevron}>‹</Text>
           </TouchableOpacity>
 
-          <VideoView
-            player={player}
-            style={styles.mascot}
-            contentFit="contain"
-            nativeControls={false}
-          />
+          <View style={styles.mascotWrapper}>
+            {/* Video sits underneath at full opacity — no white flash */}
+            <VideoView
+              player={player}
+              style={styles.mascot}
+              contentFit="contain"
+              nativeControls={false}
+            />
+            {/* GIF on top, fades out to reveal the video */}
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: gifOpacity }]}>
+              <Image
+                source={MASCOT_GIF}
+                style={styles.mascot}
+                contentFit="contain"
+                autoplay
+              />
+            </Animated.View>
+          </View>
         </View>
 
         {/* Content sheet */}
         <View style={styles.sheet}>
           <Text style={styles.eyebrow}>SHOW OFF YOUR SETUP</Text>
-          <Text style={styles.title}>Your rig, server, and gear — all in one place.</Text>
+          <Text style={styles.title}>Your rig, server, and gear all in one place.</Text>
           <Text style={styles.body}>
             Scan what you own, drop it onto your board, and show the community exactly how your
             setup comes together.
@@ -93,7 +119,7 @@ export default function OnboardingScreen({ onContinue, onBack }) {
 }
 
 const C = {
-  bg:        '#F4F1EA', // warm off-white
+  bg:        '#F5F5F0',
   sheet:     '#FFFFFF',
   ink:       '#161616',
   body:      '#6E6E73',
@@ -124,7 +150,8 @@ const styles = StyleSheet.create({
   },
   backChevron: { color: C.ink, fontSize: 26, fontWeight: '400', marginTop: -2, marginLeft: -2 },
 
-  mascot: { width: 300, aspectRatio: 1230 / 768, backgroundColor: 'transparent' },
+  mascotWrapper: { width: 420, aspectRatio: 1230 / 768 },
+  mascot: { width: 420, aspectRatio: 1230 / 768, backgroundColor: 'transparent' },
 
   // Sheet
   sheet: {

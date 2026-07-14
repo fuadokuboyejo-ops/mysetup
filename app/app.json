@@ -35,7 +35,15 @@
           "photosPermission": "Allow mysetup to access your photos to scan your desk setup."
         }
       ],
-      "expo-video"
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Allow mysetup to save your generated setup photos to your camera roll."
+        }
+      ],
+      "expo-video",
+      "expo-image",
+      "expo-status-bar"
     ]
   }
 }

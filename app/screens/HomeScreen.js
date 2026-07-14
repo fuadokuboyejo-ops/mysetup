@@ -111,7 +111,7 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.safeArea}>
 
         {/* Header */}
@@ -182,14 +182,14 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
 }
 
 const C = {
-  bg:     '#0c0c0e',
-  card:   '#1a1a1d',
-  slot:   '#242428',
-  filled: '#2e2e33',
-  border: '#2a2a2e',
-  text:   '#f5f5f7',
-  sub:    '#8e8e96',
-  accent: '#ffffff',
+  bg:     '#FAFAF8',
+  card:   '#FFFFFF',
+  slot:   '#FFFFFF',
+  filled: '#F3F1EC',
+  border: '#E0E0E0',
+  text:   '#161616',
+  sub:    '#8A8792',
+  accent: '#161616',
 };
 
 const styles = StyleSheet.create({
@@ -209,6 +209,7 @@ const styles = StyleSheet.create({
   headerIcon: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: C.card,
+    borderWidth: 1, borderColor: C.border,
     alignItems: 'center', justifyContent: 'center',
   },
   headerIconText: { color: C.sub, fontSize: 17 },
@@ -218,10 +219,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7, paddingHorizontal: 16,
     borderRadius: 20,
     backgroundColor: C.card,
+    borderWidth: 1, borderColor: C.border,
   },
-  tabActive: { backgroundColor: C.accent },
+  tabActive: { backgroundColor: C.accent, borderColor: C.accent },
   tabText: { color: C.sub, fontSize: 14, fontWeight: '500' },
-  tabTextActive: { color: C.bg, fontWeight: '700' },
+  tabTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   feed: { paddingHorizontal: 14, gap: 12, paddingBottom: 100 },
 
@@ -257,7 +259,7 @@ const styles = StyleSheet.create({
   miniBoard: {
     marginHorizontal: 14,
     marginBottom: 8,
-    backgroundColor: '#141416',
+    backgroundColor: '#F0EFEA',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
@@ -272,19 +274,19 @@ const styles = StyleSheet.create({
     backgroundColor: C.slot,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333337',
+    borderColor: '#D9D6CE',
     borderStyle: 'dashed',
   },
   miniSlotWide: { width: '60%', flex: 0 },
   miniSlotTall: { height: 52 },
-  miniSlotFilled: { backgroundColor: C.filled, borderStyle: 'solid', borderColor: '#3a3a40' },
+  miniSlotFilled: { backgroundColor: C.filled },
   tapBadge: {
     position: 'absolute', bottom: 14, right: 14,
     backgroundColor: C.accent,
     borderRadius: 12,
     paddingVertical: 5, paddingHorizontal: 10,
   },
-  tapBadgeText: { color: C.bg, fontSize: 11, fontWeight: '600' },
+  tapBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
 
   cardFooter: {
     flexDirection: 'row',
@@ -323,11 +325,11 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 8,
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 0 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 6,
   },
-  navScanIcon: { color: C.bg, fontSize: 26, fontWeight: '300' },
+  navScanIcon: { color: '#FFFFFF', fontSize: 26, fontWeight: '300' },
 });

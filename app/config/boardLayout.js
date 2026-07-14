@@ -112,6 +112,31 @@ export function isMonitorNode(node) {
   return MONITOR_KEYWORDS.some(k => text.includes(k));
 }
 
+// ─── Visual weight — how big a cut-out should render inside its slot ─────────
+// Real gear doesn't fill its slot uniformly: a mouse should look small even
+// sitting in a same-sized slot as a keyboard, or it flips the desk's visual
+// hierarchy. Percentages are of the slot's own box; the image is centered via
+// resizeMode="contain" so it's scaled down, never stretched or clipped.
+const VISUAL_WEIGHTS = [
+  { keywords: ['monitor', 'display', 'screen', 'tv'], widthPct: 0.88, heightPct: 0.88 },
+  { keywords: ['keyboard'], widthPct: 0.70, heightPct: 0.62 },
+  { keywords: ['mouse', 'trackpad', 'trackball'], widthPct: 0.50, heightPct: 0.50 },
+  { keywords: ['pc tower', 'tower', 'desktop pc', 'computer case', 'pc case', 'gaming pc', 'mini itx', 'atx'], widthPct: 0.55, heightPct: 0.75 },
+  { keywords: ['deskmat', 'mat', 'mousepad', 'desk mat', 'mouse mat'], widthPct: 0.90, heightPct: 0.45 },
+  { keywords: ['headphones', 'headset', 'earbuds', 'speaker'], widthPct: 0.65, heightPct: 0.65 },
+];
+const DEFAULT_VISUAL_WEIGHT = { widthPct: 0.80, heightPct: 0.75 };
+
+/** Looks at the item's own category/name (not the slot) so scaling is correct
+ * no matter which item a user drops into a given slot. */
+export function getVisualScale(item) {
+  const cat = (item?.product?.category || '').toLowerCase();
+  const name = (item?.product?.product_name || '').toLowerCase();
+  const text = `${cat} ${name}`;
+  const match = VISUAL_WEIGHTS.find(w => w.keywords.some(k => text.includes(k)));
+  return match || DEFAULT_VISUAL_WEIGHT;
+}
+
 /** Match scanned items to custom board slot nodes by id, label, or category defs. */
 export function matchItemsToLayout(items, nodes, slotDefs, manualSlots = {}) {
   const slots = {};

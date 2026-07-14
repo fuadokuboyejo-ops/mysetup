@@ -181,7 +181,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
 
   return (
     <View style={styles.container}>
-      <Image source={{ uri: photoUri }} style={[styles.preview, manualEntry && styles.keyboardPreview]} resizeMode="cover" />
+      <Image source={{ uri: photoUri }} style={[styles.preview, manualEntry && styles.keyboardPreview]} resizeMode="contain" />
 
       <View style={[styles.overlay, manualEntry && styles.keyboardOverlay]}>
         <View style={styles.topBar}>
@@ -227,7 +227,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
                 </View>
 
                 <TouchableOpacity style={[styles.analyzeButton, styles.keyboardSaveButton]} onPress={saveKeyboardDetails} activeOpacity={0.85}>
-                  <Text style={styles.analyzeText}>Save Keyboard Details</Text>
+                  <Text style={[styles.analyzeText, styles.keyboardSaveButtonText]}>Save Keyboard Details</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : isMonitor ? (
@@ -280,7 +280,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
                 </View>
 
                 <TouchableOpacity style={[styles.analyzeButton, styles.keyboardSaveButton]} onPress={saveMonitorDetails} activeOpacity={0.85}>
-                  <Text style={styles.analyzeText}>Save Monitor Details</Text>
+                  <Text style={[styles.analyzeText, styles.keyboardSaveButtonText]}>Save Monitor Details</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : isMouse ? (
@@ -320,7 +320,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
                 </View>
 
                 <TouchableOpacity style={[styles.analyzeButton, styles.keyboardSaveButton]} onPress={saveMouseDetails} activeOpacity={0.85}>
-                  <Text style={styles.analyzeText}>Save Mouse Details</Text>
+                  <Text style={[styles.analyzeText, styles.keyboardSaveButtonText]}>Save Mouse Details</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : isPc ? (
@@ -350,7 +350,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
                 </View>
 
                 <TouchableOpacity style={[styles.analyzeButton, styles.keyboardSaveButton]} onPress={savePcDetails} activeOpacity={0.85}>
-                  <Text style={styles.analyzeText}>Save PC Build</Text>
+                  <Text style={[styles.analyzeText, styles.keyboardSaveButtonText]}>Save PC Build</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : (
@@ -370,7 +370,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
                       <Text style={styles.analyzeText}>Analyzing...</Text>
                     </View>
                   ) : (
-                    <Text style={styles.analyzeText}>Analyze Setup</Text>
+                    <Text style={styles.analyzeText}>Analyze Product</Text>
                   )}
                 </TouchableOpacity>
               </>
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   },
   keyboardPanel: {
     flex: 1,
-    backgroundColor: '#0F0F0F',
+    backgroundColor: '#FAFAF8',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 0,
@@ -467,26 +467,26 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     gap: 8,
   },
-  panelTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  panelSub: { color: '#888', fontSize: 14, marginBottom: 8 },
+  panelTitle: { color: '#161616', fontSize: 20, fontWeight: '700' },
+  panelSub: { color: '#8A8792', fontSize: 14, marginBottom: 8 },
   manualCard: {
-    backgroundColor: '#171719',
+    backgroundColor: '#FFFFFF',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#2e2e32',
+    borderColor: '#E0E0E0',
     padding: 14,
     gap: 14,
     marginTop: 4,
   },
   fieldGroup: { gap: 10 },
   field: { gap: 7, marginTop: 10 },
-  fieldLabel: { color: '#888', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  fieldLabel: { color: '#8A8792', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   input: {
-    backgroundColor: '#222226',
+    backgroundColor: '#FAFAF8',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#34343a',
-    color: '#fff',
+    borderColor: '#E0E0E0',
+    color: '#161616',
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 13,
@@ -496,18 +496,18 @@ const styles = StyleSheet.create({
     minHeight: 38,
     paddingHorizontal: 14,
     borderRadius: 19,
-    backgroundColor: '#222226',
+    backgroundColor: '#FAFAF8',
     borderWidth: 1,
-    borderColor: '#34343a',
+    borderColor: '#E0E0E0',
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickChipSelected: {
-    backgroundColor: '#f5f5f7',
-    borderColor: '#f5f5f7',
+    backgroundColor: '#6D5EF0',
+    borderColor: '#6D5EF0',
   },
-  quickChipText: { color: '#b8b8be', fontSize: 13, fontWeight: '600' },
-  quickChipTextSelected: { color: '#0F0F0F' },
+  quickChipText: { color: '#6E6E73', fontSize: 13, fontWeight: '600' },
+  quickChipTextSelected: { color: '#FFFFFF' },
 
   analyzeButton: {
     backgroundColor: '#FFFFFF',
@@ -516,7 +516,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  keyboardSaveButton: { marginBottom: 24 },
+  keyboardSaveButton: { marginBottom: 24, backgroundColor: '#6D5EF0' },
+  keyboardSaveButtonText: { color: '#FFFFFF' },
   analyzeDisabled: { opacity: 0.6 },
   analyzeText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
   scanningRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

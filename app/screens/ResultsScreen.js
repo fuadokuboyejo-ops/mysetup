@@ -10,33 +10,57 @@ export default function ResultsScreen({ items: product, photoUri, photoBase64, s
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
 
-  const handleAddToSetup = async () => {
-    setAdding(true);
+  // Only the board cares about cutouts — save unconditionally so the item still
+  // reaches the library either way, but remember whether it's a real cutout.
+  const finishAdd = async (image, isCutout) => {
     try {
-      // Background removal is best-effort — some products (monitors/displays fill
-      // the frame with no isolated foreground, so remove.bg fails). If it doesn't
-      // work, keep the raw photo so the item still gets added.
-      let image = photoBase64;
-      try {
-        const res = await fetch(`${API_BASE}/api/remove-bg`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photo: photoBase64 }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.image) image = data.image;
-        }
-      } catch {
-        // keep raw photo
-      }
-      await addSetupItem(setupId || 'default', product, image);
+      await addSetupItem(setupId || 'default', product, image, isCutout);
       setAdded(true);
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
       setAdding(false);
     }
+  };
+
+  const attemptCutout = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/remove-bg`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo: photoBase64 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.image) return data.image;
+      }
+    } catch {
+      // fall through to the retry/skip prompt below
+    }
+    return null;
+  };
+
+  const handleAddToSetup = async () => {
+    setAdding(true);
+    const cutImage = await attemptCutout();
+    if (cutImage) {
+      await finishAdd(cutImage, true);
+      return;
+    }
+    // Background removal failed — some products (monitors/displays) fill the
+    // frame with no isolated foreground, so remove.bg can't always cut them
+    // out. Ask instead of silently keeping the raw photo: items without a
+    // real cutout aren't placeable on the board until this succeeds.
+    setAdding(false);
+    Alert.alert(
+      "Couldn't cut out background",
+      'This item will still be saved to your library, but it needs a clean cutout before it can go on your board.',
+      [
+        { text: 'Try again', onPress: handleAddToSetup },
+        { text: 'Save without cutout', onPress: () => { setAdding(true); finishAdd(photoBase64, false); } },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   };
 
   if (!product) {

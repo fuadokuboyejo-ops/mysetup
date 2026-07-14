@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, PanResponder, Modal, SafeAreaView,
+  StyleSheet, Alert, ActivityIndicator, PanResponder, Modal, SafeAreaView, StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup } from '../config/setup';
 import {
-  computeLayout, normalizeNodes, nodeSpan,
+  computeLayout, normalizeNodes, nodeSpan, getVisualScale,
 } from '../config/boardLayout';
 
 const SLOT_DEFS = [
@@ -343,7 +343,7 @@ function DotItemCard({ item, dot, onClose }) {
 }
 
 // ─── Main SetupScreen ─────────────────────────────────────────────────────────
-export default function SetupScreen({ setup, initialView = 'board', onBack, onScanMore, onDelete }) {
+export default function SetupScreen({ setup, initialView = 'board', autoArrange = false, onBack, onScanMore, onDelete }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -363,8 +363,9 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
   const [isDraggingCard, setIsDraggingCard] = useState(false);
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
 
-  // Full-screen arrange page (drag items onto/between slots).
-  const [arranging, setArranging] = useState(false);
+  // Full-screen arrange page (drag items onto/between slots) — opens
+  // immediately when arriving via a deep link (e.g. Revamp's "Arrange board").
+  const [arranging, setArranging] = useState(autoArrange);
 
   // Board item drag — place from the tray onto a slot, or move between slots.
   const [boardDrag, setBoardDrag] = useState(null);       // { item, fromNode }
@@ -563,6 +564,9 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
     if (it) slots[nodeId] = it;
   }
   const gridLayout = layoutNodes ? computeLayout(layoutNodes, boardW) : null;
+  // Only true cut-outs (isCutout !== false) can be placed on the board — items
+  // still in your library are unaffected, this just gates the tray/picker.
+  const boardEligibleItems = items.filter(it => it.isCutout !== false);
   const slotRefs = useRef({});
 
   // ── Board item drag-and-drop ────────────────────────────────────────────────
@@ -665,10 +669,16 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
               activeOpacity={0.75}
             />
             {item ? (
-              <>
-                <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.slotImage} resizeMode="contain" />
-                <Text style={[styles.slotLabelFilled, labelVertical && { transform: [{ rotate: '90deg' }] }]}>{label}</Text>
-              </>
+              (() => {
+                const vw = getVisualScale(item);
+                return (
+                  <Image
+                    source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+                    style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
+                    resizeMode="contain"
+                  />
+                );
+              })()
             ) : (
               <View style={styles.emptySlotContent} pointerEvents="none">
                 {!labelVertical && <Text style={styles.emptySlotPlus}>+</Text>}
@@ -684,7 +694,7 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
   // Draggable item tray (Arrange page).
   const renderTray = () => (
     <View style={styles.trayRow}>
-      {items.map(item => {
+      {boardEligibleItems.map(item => {
         const placed = Object.values(boardSlots).includes(item.id);
         const dragging = boardDrag?.item?.id === item.id && boardDrag?.fromNode == null;
         return (
@@ -712,12 +722,16 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
     return (
       <View ref={r => { slotRefs.current[slotKey] = r; }} style={[styles.slot, isSelected && styles.slotSelected, !item && styles.slotEmpty, extraStyle]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => item ? setSelected(isSelected ? null : item) : setPickerNode(slotKey)} activeOpacity={0.75} />
-        {item ? (
-          <>
-            <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.slotImage} resizeMode="contain" />
-            <Text style={[styles.slotLabelFilled, textRotate && { transform: [{ rotate: '90deg' }] }]}>{label}</Text>
-          </>
-        ) : (
+        {item ? (() => {
+          const vw = getVisualScale(item);
+          return (
+            <Image
+              source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+              style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
+              resizeMode="contain"
+            />
+          );
+        })() : (
           <View style={styles.emptySlotContent} pointerEvents="none">
             <Text style={styles.emptySlotPlus}>+</Text>
             <Text style={[styles.slotLabel, textRotate && { transform: [{ rotate: '90deg' }] }]}>{label}</Text>
@@ -747,15 +761,20 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
   };
 
   // ── Arrange page — drag items onto the board, or between slots ──────────────
+  // Arriving via a deep link (e.g. Revamp's "Arrange board") returns straight
+  // there when done; opened from within the setup screen just closes back to it.
+  const exitArrange = () => (autoArrange ? onBack() : setArranging(false));
+
   if (arranging) {
     return (
       <View style={styles.container}>
+        <StatusBar barStyle="dark-content" />
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setArranging(false)} style={styles.headerBtn}>
+          <TouchableOpacity onPress={exitArrange} style={styles.headerBtn}>
             <Text style={styles.chevron}>‹</Text>
           </TouchableOpacity>
           <Text style={styles.setupName} numberOfLines={1}>Arrange board</Text>
-          <TouchableOpacity onPress={() => setArranging(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity onPress={exitArrange} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={styles.doneText}>Done</Text>
           </TouchableOpacity>
         </View>
@@ -786,6 +805,7 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.headerBtn}>
           <Text style={styles.chevron}>‹</Text>
@@ -811,7 +831,7 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color="#8fb8f0" /></View>
+        <View style={styles.center}><ActivityIndicator color={C.accent} /></View>
       ) : view === 'photo' ? (
 
         /* ── Photo tab ─────────────────────────────────────────────── */
@@ -1088,9 +1108,11 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
             <Text style={styles.pickerTitle}>Place an item</Text>
             {items.length === 0 ? (
               <Text style={styles.pickerEmpty}>No items yet — scan a product to build your library.</Text>
+            ) : boardEligibleItems.length === 0 ? (
+              <Text style={styles.pickerEmpty}>Your items still need their background cut out before they can go on the board.</Text>
             ) : (
               <ScrollView contentContainerStyle={styles.pickerGrid} showsVerticalScrollIndicator={false}>
-                {items.map(it => (
+                {boardEligibleItems.map(it => (
                   <TouchableOpacity
                     key={it.id}
                     style={styles.pickerItem}
@@ -1114,10 +1136,10 @@ export default function SetupScreen({ setup, initialView = 'board', onBack, onSc
 }
 
 const C = {
-  bg: '#0e0e10', panel: '#1a1a1d', card: '#242428', nested: '#2e2e33',
-  border: '#2e2e32', borderSubtle: 'rgba(255,255,255,0.07)', text: '#f5f5f7', sub: '#a0a0a8',
-  accent: '#8fb8f0', selected: '#1a3a6a', selBorder: '#4a84d8',
-  hovered: '#0d2a1f', hovBorder: '#4a9f6a',
+  bg: '#FAFAF8', panel: '#F4F4F4', card: '#FAFAFA', nested: '#EDEDED',
+  border: '#E0E0E0', borderSubtle: 'rgba(0,0,0,0.06)', text: '#161616', sub: '#6E6E73',
+  accent: '#6D5EF0', selected: '#EEEAFE', selBorder: '#6D5EF0',
+  hovered: '#E9F7EE', hovBorder: '#3FA35C',
 };
 
 // Arrange modal styles
@@ -1189,15 +1211,25 @@ const styles = StyleSheet.create({
   // Custom-grid container: slots are absolutely positioned with the gap baked
   // into their coordinates (like the builder), so it must have no padding/gap.
   boardGrid: { padding: 0, gap: 0, position: 'relative' },
-  slot: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
-  slotEmpty: { borderStyle: 'dashed', borderColor: '#424248' },
-  slotSelected: { backgroundColor: C.selected, borderColor: C.selBorder, borderWidth: 2, borderStyle: 'solid', shadowColor: '#4a84d8', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 8 },
+  // Filled: content leads — thin, soft border, brighter background.
+  slot: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1.5, borderColor: '#D8D8DC', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  // Empty: dashed outline + muted background so filled slots visibly pop next to them.
+  slotEmpty: { backgroundColor: C.nested, borderWidth: 2, borderStyle: 'dashed', borderColor: '#ADADAD' },
+  slotSelected: { backgroundColor: C.selected, borderColor: C.selBorder, borderWidth: 2, borderStyle: 'solid', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 8 },
   slotHover: { backgroundColor: C.hovered, borderColor: C.hovBorder, borderWidth: 2, borderStyle: 'solid' },
-  slotImage: { width: '85%', height: '80%' },
+  // Base size is set per-item via getVisualScale(); shadow is the one constant
+  // every cut-out shares. shadowColor/Offset/Opacity/Radius follow the PNG's
+  // alpha shape on iOS; elevation is Android's best-effort (rectangular) fallback.
+  slotImage: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   emptySlotContent: { alignItems: 'center', gap: 2 },
   emptySlotPlus: { color: C.sub, fontSize: 18, fontWeight: '300', lineHeight: 20 },
   slotLabel: { color: C.sub, fontSize: 12 },
-  slotLabelFilled: { position: 'absolute', bottom: 5, color: C.sub, fontSize: 11, fontWeight: '500' },
 
   monitorRow: { alignItems: 'center' },
   monitorSlot: { width: '68%', height: 100 },
@@ -1232,8 +1264,8 @@ const styles = StyleSheet.create({
   addPeripheralBtnRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   addPeripheralPlusRow: { color: C.sub, fontSize: 20, fontWeight: '300', width: 72, textAlign: 'center' },
   addPeripheralTextRow: { color: C.sub, fontSize: 15 },
-  arrangeBoardBtn: { marginTop: 16, borderRadius: 14, backgroundColor: '#fff', paddingVertical: 15, alignItems: 'center' },
-  arrangeBoardText: { color: '#0e0e10', fontSize: 15, fontWeight: '700' },
+  arrangeBoardBtn: { marginTop: 16, borderRadius: 14, backgroundColor: C.accent, paddingVertical: 15, alignItems: 'center' },
+  arrangeBoardText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   doneText: { color: C.accent, fontSize: 16, fontWeight: '600' },
 
 
@@ -1284,32 +1316,32 @@ const styles = StyleSheet.create({
   photoScroll: { flex: 1 },
   photoAreaScroll: {
     width: '100%', aspectRatio: 4 / 3,
-    overflow: 'hidden', backgroundColor: '#13111a',
+    overflow: 'hidden', backgroundColor: C.panel,
   },
   photoItemsSection: { padding: 16, paddingTop: 18, gap: 10 },
   photoTagsLabel: { color: C.sub, fontSize: 12, fontWeight: '600', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 2 },
   photoEmptyTags: { paddingVertical: 24, alignItems: 'center', gap: 8 },
   photoEmptyTagsTitle: { color: C.sub, fontSize: 15, fontWeight: '600' },
-  photoEmptyTagsHint: { color: '#4a4854', fontSize: 13, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20 },
+  photoEmptyTagsHint: { color: '#A8A8AE', fontSize: 13, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20 },
 
   // Edit mode — sidebar (photo left, items right)
   photoOuter: { flex: 1 },
   photoOuterTagMode: { padding: 12, paddingBottom: 14 },
   photoInner: { flex: 1 },
   photoInnerRow: { flexDirection: 'row', gap: 10 },
-  photoArea: { flex: 1, overflow: 'hidden', backgroundColor: '#0a0a0c' },
+  photoArea: { flex: 1, overflow: 'hidden', backgroundColor: C.panel },
   photoAreaTagMode: { flex: 3, borderRadius: 16 },
   photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  photoPlaceholderIcon: { color: '#35323e', fontSize: 52 },
+  photoPlaceholderIcon: { color: '#D0D0D5', fontSize: 52 },
   photoPlaceholderText: { color: C.sub, fontSize: 16, fontWeight: '600' },
-  photoPlaceholderHint: { color: '#4a4854', fontSize: 13 },
+  photoPlaceholderHint: { color: '#A8A8AE', fontSize: 13 },
   addPhotoBtn: {
     marginTop: 16,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: C.accent,
+    borderRadius: 14, borderWidth: 0,
     paddingVertical: 12, paddingHorizontal: 28,
   },
-  addPhotoBtnText: { color: '#f5f5f7', fontSize: 15, fontWeight: '600' },
+  addPhotoBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   changePhotoBtn: {
     position: 'absolute', bottom: 14, left: 14,
     backgroundColor: 'rgba(0,0,0,0.55)',

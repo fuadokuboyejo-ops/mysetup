@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView,
-  PanResponder, Animated,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  PanResponder, Animated, Keyboard,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { updateSetupLayout } from '../config/setup';
 import {
   COLS, MAX_ROWS, GAP, ROW_UNIT,
@@ -10,11 +11,11 @@ import {
 } from '../config/boardLayout';
 
 const C = {
-  bg: '#0e0e10', panel: '#1a1a1d', card: '#242428', border: '#2e2e32',
-  borderSubtle: 'rgba(255,255,255,0.07)',
-  text: '#f5f5f7', sub: '#a0a0a8', accent: '#8fb8f0',
-  selBorder: '#4a84d8', selBg: 'rgba(74,132,216,0.12)',
-  phBorder: '#4a84d8',
+  bg: '#FFFFFF', panel: '#F4F4F4', card: '#FAFAFA', border: '#E0E0E0',
+  borderSubtle: 'rgba(0,0,0,0.06)',
+  text: '#161616', sub: '#6E6E73', accent: '#6D5EF0',
+  selBorder: '#6D5EF0', selBg: 'rgba(109,94,240,0.08)',
+  phBorder: '#6D5EF0',
 };
 
 const HOLD_MS = 220;
@@ -158,9 +159,12 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
   const resizingIdRef = useRef(null);
   const lastResizeRef = useRef({ cols: 0, rows: 0 });
 
+  // .measure()'s pageX/pageY (not measureInWindow, which under-reports Y by
+  // the status-bar/edge-to-edge inset on some Android configs) — matches the
+  // coordinate space of touch events' pageX/pageY.
   const measureBoard = useCallback(() => {
-    boardRef.current?.measureInWindow?.((x, y) => {
-      boardPagePos.current = { x, y };
+    boardRef.current?.measure?.((x, y, w, h, pageX, pageY) => {
+      boardPagePos.current = { x: pageX, y: pageY };
     });
   }, []);
 
@@ -188,7 +192,8 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, label } : n));
   };
 
-  // Which node's rect contains the finger.
+  // Hit-test using screen coords converted to board-relative via boardPagePos.
+  // Always call measure() before this to ensure boardPagePos is current.
   const findNodeAt = useCallback((pageX, pageY) => {
     const bW = boardWRef.current;
     if (!bW) return null;
@@ -224,43 +229,49 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
         touchStartRef.current = { x: pageX, y: pageY };
         dragActiveRef.current = false;
         touchCancelledRef.current = false;
-        measureBoard();
 
-        const pressedId = findNodeAt(pageX, pageY);
-        pressedIdRef.current = pressedId;
-        if (!pressedId) return; // empty area → deselect on release
+        // measure() is async — hit-test only once boardPagePos reflects *this*
+        // touch, otherwise we score against wherever the board was measured
+        // last (stale by one gesture), which can land on the wrong row.
+        boardRef.current?.measure?.((x, y, w, h, pageX2, pageY2) => {
+          boardPagePos.current = { x: pageX2, y: pageY2 };
 
-        holdTimerRef.current = setTimeout(() => {
-          const node = nodesRef.current.find(n => n.id === pressedId);
-          const bW = boardWRef.current;
-          if (!node || !bW) return;
-          measureBoard();
+          const pressedId = findNodeAt(pageX, pageY);
+          pressedIdRef.current = pressedId;
+          if (!pressedId) return; // empty area → deselect on release
 
-          const { rects } = computeLayout(nodesRef.current, bW);
-          const r = rects[pressedId];
-          const d = {
-            sourceId: pressedId,
-            cols: node.cols,
-            rows: node.rows,
-            shape: node.shape,
-            label: node.label,
-            ghostW: r.w,
-            ghostH: r.h,
-            srcCol: node.col ?? 0,   // where the dragged slot started
-            srcRow: node.row ?? 0,
-            targetCol: node.col ?? 0,
-            targetRow: node.row ?? 0,
-            shiftRows: 0,
-            swapId: null,            // slot we'd trade places with, if any
-          };
-          dragDataRef.current = d;
-          dragActiveRef.current = true;
-          ghostPos.setValue({
-            x: touchStartRef.current.x - r.w / 2,
-            y: touchStartRef.current.y - r.h / 2,
-          });
-          setDrag(d);
-        }, HOLD_MS);
+          holdTimerRef.current = setTimeout(() => {
+            const node = nodesRef.current.find(n => n.id === pressedId);
+            const bW = boardWRef.current;
+            if (!node || !bW) return;
+            measureBoard();
+
+            const { rects } = computeLayout(nodesRef.current, bW);
+            const r = rects[pressedId];
+            const d = {
+              sourceId: pressedId,
+              cols: node.cols,
+              rows: node.rows,
+              shape: node.shape,
+              label: node.label,
+              ghostW: r.w,
+              ghostH: r.h,
+              srcCol: node.col ?? 0,
+              srcRow: node.row ?? 0,
+              targetCol: node.col ?? 0,
+              targetRow: node.row ?? 0,
+              shiftRows: 0,
+              swapId: null,
+            };
+            dragDataRef.current = d;
+            dragActiveRef.current = true;
+            ghostPos.setValue({
+              x: touchStartRef.current.x - r.w / 2,
+              y: touchStartRef.current.y - r.h / 2,
+            });
+            setDrag(d);
+          }, HOLD_MS);
+        });
       },
 
       onPanResponderMove: (e) => {
@@ -572,7 +583,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
 
       <Text style={S.instructions}>hold & drag to move · tap to select · drag blue corner for any width & height</Text>
 
-      {/* collapsable={false} keeps measureInWindow working. The single board-level
+      {/* collapsable={false} keeps measure() working. The single board-level
           PanResponder owns all gestures; slots are absolutely positioned per the grid. */}
       <View
         ref={boardRef}
@@ -698,20 +709,33 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
 
             <View style={S.nameRow}>
               <Text style={S.nameLabel}>Name</Text>
-              <TextInput
-                ref={nameInputRef}
-                style={S.nameInput}
-                value={nameDraft}
-                onChangeText={(text) => {
-                  setNameDraft(text);
-                  renameNode(selectedId, text);
-                }}
-                placeholder="monitor, keyboard, mouse…"
-                placeholderTextColor="#3a3a44"
-                returnKeyType="done"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <View style={S.nameInputRow}>
+                <TextInput
+                  ref={nameInputRef}
+                  style={[S.nameInput, S.nameInputFlex]}
+                  value={nameDraft}
+                  onChangeText={(text) => {
+                    setNameDraft(text);
+                    renameNode(selectedId, text);
+                  }}
+                  placeholder="monitor, keyboard, mouse…"
+                  placeholderTextColor="#ADADAD"
+                  returnKeyType="done"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                />
+                <TouchableOpacity
+                  style={S.nameDoneBtn}
+                  onPress={() => {
+                    nameInputRef.current?.blur();
+                    Keyboard.dismiss();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={S.nameDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={S.sizeReadout}>{span.cw} wide × {span.rh} tall</Text>
@@ -836,27 +860,29 @@ const S = StyleSheet.create({
   node: {
     backgroundColor: C.card,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#424248',
+    borderWidth: 1.5,
+    borderColor: '#ADADAD',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
   },
   nodeSelected: {
     borderColor: C.selBorder,
     borderWidth: 2,
     borderStyle: 'solid',
     backgroundColor: C.selBg,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   nodeContent: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   nodePlus: { color: C.sub, fontSize: 18, fontWeight: '300', lineHeight: 20 },
   nodeLabel: { color: C.sub, fontSize: 12, fontWeight: '500' },
-  nodeLabelPlaceholder: { color: '#3a3a44', fontStyle: 'italic' },
+  nodeLabelPlaceholder: { color: '#ADADAD', fontStyle: 'italic' },
   nodeLabelRotated: { transform: [{ rotate: '90deg' }] },
 
   removeBtn: {
@@ -899,6 +925,13 @@ const S = StyleSheet.create({
     borderRadius: 1,
     opacity: 0.6,
   },
+  bottomInsertHint: {
+    position: 'absolute',
+    height: 2,
+    backgroundColor: C.accent,
+    borderRadius: 1,
+    opacity: 0.6,
+  },
 
   ghost: {
     position: 'absolute',
@@ -913,7 +946,7 @@ const S = StyleSheet.create({
     opacity: 0.88,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 10,
   },
@@ -941,6 +974,7 @@ const S = StyleSheet.create({
   shapePanelTitle: { color: C.sub, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
   nameRow: { gap: 6 },
   nameLabel: { color: C.sub, fontSize: 12, fontWeight: '600' },
+  nameInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   nameInput: {
     backgroundColor: C.card,
     borderRadius: 10,
@@ -952,8 +986,16 @@ const S = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
+  nameInputFlex: { flex: 1 },
+  nameDoneBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: C.accent,
+  },
+  nameDoneBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   sizeReadout: { color: C.text, fontSize: 15, fontWeight: '700' },
-  shapePanelHint: { color: '#3a3a44', fontSize: 12 },
+  shapePanelHint: { color: '#ADADAD', fontSize: 12 },
 
   dimRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   dimLabel: { color: C.sub, fontSize: 12, fontWeight: '600', width: 48 },
@@ -985,10 +1027,10 @@ const S = StyleSheet.create({
   shapeIcon_half:   { width: 18, height: 12 },
   shapeIcon_square: { width: 14, height: 14 },
   shapeIcon_tall:   { width: 12, height: 24 },
-  shapePanelFooter: { color: '#3a3a44', fontSize: 12, textAlign: 'center' },
+  shapePanelFooter: { color: '#ADADAD', fontSize: 12, textAlign: 'center' },
 
   shapePanelPlaceholder: {
     marginHorizontal: 16, marginTop: 12, paddingVertical: 20, alignItems: 'center',
   },
-  shapePanelPlaceholderText: { color: '#3a3a44', fontSize: 12 },
+  shapePanelPlaceholderText: { color: '#ADADAD', fontSize: 12 },
 });
