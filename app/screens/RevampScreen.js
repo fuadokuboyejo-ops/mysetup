@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, Modal, StatusBar, TextInput,
@@ -28,7 +28,7 @@ function matchBoard(items, nodes) {
   return slots;
 }
 
-export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto }) {
+export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto, autoGenerate = false, onAutoGenerateStarted }) {
   const [items, setItems] = useState([]);
   const [setups, setSetups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +41,7 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto 
   const [boardSaveOpen, setBoardSaveOpen] = useState(false);
   const [boardName, setBoardName] = useState('');
   const [savingBoard, setSavingBoard] = useState(false);
+  const autoGenerateStarted = useRef(false);
 
   // `setup` (from App.js's activeSetup) goes stale after arranging — arranging
   // only persists to AsyncStorage + SetupScreen's own local state, it never
@@ -123,6 +124,13 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto 
       setGenerating(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoGenerate || loading || autoGenerateStarted.current) return;
+    autoGenerateStarted.current = true;
+    onAutoGenerateStarted?.();
+    generate();
+  }, [autoGenerate, loading]);
 
   const saveTo = async (setupId) => {
     if (!image) return;

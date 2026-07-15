@@ -44,6 +44,7 @@ export default function App() {
   // A photo of the user's setup chosen for "Try different gear" (camera roll,
   // camera, or a saved setup's photo) — null for the "Design from scratch" path.
   const [revampBasePhoto, setRevampBasePhoto] = useState(null);
+  const [revampAutoGenerate, setRevampAutoGenerate] = useState(false);
   const [revampDraftPhoto, setRevampDraftPhoto] = useState(null);
   const [revampDraftSetup, setRevampDraftSetup] = useState(null);
 
@@ -135,6 +136,7 @@ export default function App() {
 
   const designFromScratch = async () => {
     setRevampBasePhoto(null);
+    setRevampAutoGenerate(false);
     const setup = await createSetup('My Setup', 'pc');
     setActiveSetup(setup);
     setAfterBoardBuilder('revamp');
@@ -179,6 +181,7 @@ export default function App() {
     const setup = await getOrCreateRevampDraftSetup();
     setActiveSetup(setup);
     setRevampBasePhoto(photo);
+    setRevampAutoGenerate(true);
     setScreen('revamp');
   };
 
@@ -338,7 +341,7 @@ export default function App() {
         <RevampMenuScreen
           onBack={() => setScreen('home')}
           onDesignFromScratch={designFromScratch}
-          onDifferentGear={(photo) => { setRevampBasePhoto(photo || null); setScreen('revamp'); }}
+          onDifferentGear={(photo) => { setRevampBasePhoto(photo || null); setRevampAutoGenerate(false); setScreen('revamp'); }}
           onCameraRoll={openRevampCameraRoll}
           onExistingSetup={() => setScreen('profile')}
         />
@@ -362,7 +365,9 @@ export default function App() {
         <RevampScreen
           setup={activeSetup}
           basePhoto={revampBasePhoto}
-          onBack={() => setScreen('revamp-menu')}
+          autoGenerate={revampAutoGenerate}
+          onAutoGenerateStarted={() => setRevampAutoGenerate(false)}
+          onBack={() => { setRevampAutoGenerate(false); setScreen('revamp-menu'); }}
           onArrangeBoard={arrangeBoard}
         />
       );

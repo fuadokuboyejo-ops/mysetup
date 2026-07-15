@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { normalizeNodes, computeLayout, nodeSpan } from '../config/boardLayout';
+import { normalizeNodes, computeLayout, nodeSpan, getVisualScale } from '../config/boardLayout';
 import { getAllItems, getSetups } from '../config/setup';
 
 export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, onBack, onEditBoard, onArrangeBoard, onContinue }) {
@@ -117,7 +117,6 @@ export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, on
             </View>
 
             <View style={styles.boardWrap}>
-              <View style={styles.boardShadow} />
               <View
                 style={[styles.board, { height: boardLayout.height }]}
                 onLayout={event => setBoardWidth(event.nativeEvent.layout.width)}
@@ -138,16 +137,22 @@ export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, on
                       ]}
                     >
                       {item ? (
-                        <>
-                          <Image
-                            source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
-                            style={styles.boardItemImage}
-                            resizeMode="contain"
-                          />
-                          <Text style={styles.boardItemName} numberOfLines={1}>
-                            {item.product?.product_name || node.label || 'Item'}
-                          </Text>
-                        </>
+                        (() => {
+                          const visualScale = getVisualScale(item);
+                          return (
+                            <Image
+                              source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+                              style={[
+                                styles.boardItemImage,
+                                {
+                                  width: `${visualScale.widthPct * 100}%`,
+                                  height: `${visualScale.heightPct * 100}%`,
+                                },
+                              ]}
+                              resizeMode="contain"
+                            />
+                          );
+                        })()
                       ) : (
                         <>
                           {!vertical && <Text style={styles.boardPlus}>+</Text>}
@@ -179,20 +184,15 @@ export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, on
           </View>
 
           <View style={styles.actions}>
-            {photo ? (
-              <>
-                <TouchableOpacity style={styles.secondaryBtn} onPress={choosePhoto} activeOpacity={0.8}>
-                  <Text style={styles.secondaryText}>Choose another photo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => onContinue(photo)} activeOpacity={0.85}>
-                  <Text style={styles.primaryText}>Use this photo</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity style={styles.primaryBtn} onPress={choosePhoto} activeOpacity={0.85}>
-                <Text style={styles.primaryText}>Choose from camera roll</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.primaryBtn, !photo && styles.primaryBtnDisabled]}
+              onPress={() => onContinue(photo)}
+              disabled={!photo}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryText}>Generate</Text>
+            </TouchableOpacity>
+            {!photo && <Text style={styles.generateHint}>Choose a setup photo above to continue.</Text>}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -201,7 +201,7 @@ export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, on
 }
 
 const C = {
-  bg: '#F3E9E7',
+  bg: '#FFFFFF',
   card: '#FFFFFF',
   text: '#161616',
   sub: '#766F7D',
@@ -249,25 +249,29 @@ const styles = StyleSheet.create({
   },
   editBoardText: { color: C.text, fontSize: 12.5, fontWeight: '800' },
   boardWrap: { position: 'relative' },
-  boardShadow: {
-    position: 'absolute', top: 4, left: 4, right: -4, bottom: -4,
-    backgroundColor: C.shadow, borderRadius: 19,
-  },
   board: {
-    position: 'relative', backgroundColor: '#F6F3EF', borderRadius: 17,
-    borderWidth: 1.5, borderColor: C.border, overflow: 'hidden',
+    position: 'relative', backgroundColor: '#FAFAF8', borderRadius: 22,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', overflow: 'hidden',
   },
   boardSlot: {
-    position: 'absolute', backgroundColor: C.card, borderRadius: 11,
-    borderWidth: 1.5, borderColor: '#9E98A5', borderStyle: 'dashed',
+    position: 'absolute', backgroundColor: '#FFFFFF', borderRadius: 14,
+    borderWidth: 1.5, borderColor: '#ADADAD', borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06,
+    shadowRadius: 3, elevation: 2,
   },
-  boardSlotFilled: { borderStyle: 'solid', borderColor: C.border, backgroundColor: '#FFFFFF' },
-  boardItemImage: { width: '82%', height: '68%' },
-  boardItemName: { color: C.text, fontSize: 9.5, fontWeight: '700', maxWidth: '88%', marginTop: 2 },
-  boardPlus: { color: C.sub, fontSize: 17, fontWeight: '400', lineHeight: 18 },
-  boardSlotLabel: { color: C.sub, fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase' },
-  boardSlotLabelVertical: { transform: [{ rotate: '-90deg' }], width: 90, textAlign: 'center' },
+  boardSlotFilled: {
+    borderStyle: 'solid', borderWidth: 1.5, borderColor: '#D8D8DC', backgroundColor: '#FFFFFF',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06,
+    shadowRadius: 3, elevation: 2,
+  },
+  boardItemImage: {
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45,
+    shadowRadius: 12, elevation: 8,
+  },
+  boardPlus: { color: '#6E6E73', fontSize: 18, fontWeight: '300', lineHeight: 20 },
+  boardSlotLabel: { color: '#6E6E73', fontSize: 12, fontWeight: '500' },
+  boardSlotLabelVertical: { transform: [{ rotate: '90deg' }], width: 90, textAlign: 'center' },
   arrangeWrap: { position: 'relative', marginTop: 2 },
   arrangeShadow: {
     position: 'absolute', top: 3, left: 3, right: -3, bottom: -3,
@@ -288,10 +292,7 @@ const styles = StyleSheet.create({
   tipText: { color: C.sub, fontSize: 12.5, lineHeight: 18 },
   actions: { gap: 10 },
   primaryBtn: { backgroundColor: C.text, borderRadius: 15, paddingVertical: 17, alignItems: 'center' },
+  primaryBtnDisabled: { opacity: 0.35 },
   primaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  secondaryBtn: {
-    backgroundColor: C.card, borderRadius: 15, borderWidth: 1.5,
-    borderColor: C.border, paddingVertical: 15, alignItems: 'center',
-  },
-  secondaryText: { color: C.text, fontSize: 14, fontWeight: '700' },
+  generateHint: { color: C.sub, fontSize: 12, textAlign: 'center' },
 });
