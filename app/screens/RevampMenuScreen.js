@@ -116,11 +116,12 @@ function GearOptionCard({ image, title, body, onPress }) {
 export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDifferentGear, onCameraRoll, onExistingSetup }) {
   const [generationsUsed, setGenerationsUsed] = useState(0);
   const [history, setHistory] = useState([]);
-  const [previewImage, setPreviewImage] = useState(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   // Photo-source chooser for "Try different gear": null (closed) → 'menu'
   // (the three source options) → 'setups' (pick one of your saved setups).
   const [gearMode, setGearMode] = useState(null);
   const [photoSetups, setPhotoSetups] = useState([]);
+  const [historyWidth, setHistoryWidth] = useState(0);
   const statTranslate = useRef(new Animated.Value(500)).current;
   const statOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(OPTIONS.map(() => new Animated.Value(60))).current;
@@ -200,7 +201,10 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
           <View style={styles.backBtn} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.body}
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.sub}>What do you want to do?</Text>
 
           <View style={styles.list}>
@@ -213,53 +217,90 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
               </Animated.View>
             ))}
           </View>
+
+          <Animated.View
+            style={[
+              styles.statSheetWrap,
+              { opacity: statOpacity, transform: [{ translateY: statTranslate }] },
+            ]}
+          >
+            <View style={styles.statSheetHardShadow} />
+            <TouchableOpacity
+              style={styles.statSheet}
+              activeOpacity={0.8}
+              onPress={() => history[0] && setPreviewImage(history[0].image)}
+            >
+              <View style={styles.statSheetRow}>
+                <View style={styles.statInfo}>
+                  <Text style={styles.statEyebrow}>AI GENERATIONS</Text>
+                  <Text style={styles.statHeadline}>{generationsUsed} of {GENERATIONS_LIMIT} used</Text>
+                  <Text style={styles.statSub}>{Math.max(0, GENERATIONS_LIMIT - generationsUsed)} left this month</Text>
+                </View>
+                <GenRing used={generationsUsed} limit={GENERATIONS_LIMIT} />
+              </View>
+
+              {history.length > 0 ? (
+                <View onLayout={e => setHistoryWidth(e.nativeEvent.layout.width)}>
+                  <Text style={styles.historyLabel}>RECENT GENERATIONS</Text>
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.historyRow}
+                  >
+                    {history.map(h => (
+                      <TouchableOpacity
+                        key={h.id}
+                        onPress={() => setGalleryOpen(true)}
+                        activeOpacity={0.9}
+                        style={styles.historyThumbWrap}
+                      >
+                        <Image
+                          source={{ uri: `data:image/jpeg;base64,${h.image}` }}
+                          style={[styles.historyThumb, historyWidth > 0 && { width: historyWidth }]}
+                          resizeMode="cover"
+                        />
+                        <View style={styles.historyViewAllBtn}>
+                          <Text style={styles.historyViewAllBtnText}>View AI Generated Images</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={styles.historyEmpty}>
+                  <Text style={styles.historyEmptyText}>Your generated photos will show up here.</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
 
-      <Animated.View
-        style={[
-          styles.statSheetWrap,
-          { opacity: statOpacity, transform: [{ translateY: statTranslate }] },
-        ]}
-      >
-        <View style={styles.statSheetHardShadow} />
-        <TouchableOpacity
-          style={styles.statSheet}
-          activeOpacity={0.8}
-          onPress={() => history[0] && setPreviewImage(history[0].image)}
-        >
-          <View style={styles.statSheetRow}>
-            <View style={styles.statInfo}>
-              <Text style={styles.statEyebrow}>AI GENERATIONS</Text>
-              <Text style={styles.statHeadline}>{generationsUsed} of {GENERATIONS_LIMIT} used</Text>
-              <Text style={styles.statSub}>{Math.max(0, GENERATIONS_LIMIT - generationsUsed)} left this month</Text>
-            </View>
-            <GenRing used={generationsUsed} limit={GENERATIONS_LIMIT} />
+      {/* Grid of every past AI generation */}
+      <Modal visible={galleryOpen} transparent animationType="slide" onRequestClose={() => setGalleryOpen(false)}>
+        <View style={styles.galleryOverlay}>
+          <View style={styles.galleryHeader}>
+            <Text style={styles.galleryTitle}>AI Generated Images</Text>
+            <TouchableOpacity onPress={() => setGalleryOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.galleryClose}>✕</Text>
+            </TouchableOpacity>
           </View>
 
-          {history.length > 0 ? (
-            <>
-              <Text style={styles.historyLabel}>RECENT GENERATIONS</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
-                {history.map(h => (
-                  <TouchableOpacity key={h.id} onPress={() => setPreviewImage(h.image)} activeOpacity={0.85}>
-                    <Image source={{ uri: `data:image/jpeg;base64,${h.image}` }} style={styles.historyThumb} resizeMode="cover" />
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          ) : (
-            <View style={styles.historyEmpty}>
-              <Text style={styles.historyEmptyText}>Your generated photos will show up here.</Text>
+          {history.length === 0 ? (
+            <View style={styles.galleryEmpty}>
+              <Text style={styles.galleryEmptyText}>No AI generated images yet.</Text>
             </View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.galleryGrid} showsVerticalScrollIndicator={false}>
+              {history.map(h => (
+                <View key={h.id} style={styles.galleryItem}>
+                  <Image source={{ uri: `data:image/jpeg;base64,${h.image}` }} style={styles.galleryItemImage} resizeMode="cover" />
+                </View>
+              ))}
+            </ScrollView>
           )}
-        </TouchableOpacity>
-      </Animated.View>
-
-      <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
-        <TouchableOpacity style={styles.previewOverlay} activeOpacity={1} onPress={() => setPreviewImage(null)}>
-          <Image source={{ uri: `data:image/jpeg;base64,${previewImage}` }} style={styles.previewFullImage} resizeMode="contain" />
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* "Try different gear" photo-source chooser */}
@@ -341,15 +382,16 @@ const styles = StyleSheet.create({
   backText: { color: C.text, fontSize: 28, fontWeight: '300' },
   title: { color: C.text, fontSize: 18, fontWeight: '700' },
 
-  body: { paddingBottom: 360 },
+  body: { paddingBottom: 40 },
   sub: { color: C.sub, fontSize: 14, lineHeight: 20, paddingHorizontal: 20, marginTop: 4, marginBottom: 16 },
 
   list: { paddingHorizontal: 20, gap: 16 },
 
-  // Fixed panel anchored to the bottom of the screen, styled like the option
-  // cards above it (black border + hard offset shadow, no blur).
+  // Scrolls in with the option cards above it (rather than floating as a
+  // fixed overlay) so there's always a real gap, no matter how tall the
+  // recent-generation photo makes this card.
   statSheetWrap: {
-    position: 'absolute', left: 20, right: 20, bottom: 20,
+    marginHorizontal: 20, marginTop: 28,
     minHeight: 340,
   },
   statSheetHardShadow: {
@@ -371,17 +413,43 @@ const styles = StyleSheet.create({
   statInfo: { flex: 1, gap: 3 },
 
   historyLabel: { color: C.sub, fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginTop: 24, marginBottom: 10 },
-  historyRow: { gap: 10 },
+  historyRow: { gap: 12 },
+  historyThumbWrap: { position: 'relative' },
   historyThumb: {
-    width: 72, height: 72, borderRadius: 12,
+    width: '100%', aspectRatio: 4 / 3, borderRadius: 14,
     borderWidth: 1.5, borderColor: '#161616',
     backgroundColor: '#F0EFEA',
   },
+  historyViewAllBtn: {
+    position: 'absolute', left: 12, right: 12, bottom: 12,
+    backgroundColor: '#FFFFFF', borderRadius: 20,
+    borderWidth: 1.5, borderColor: '#161616',
+    paddingVertical: 12, alignItems: 'center',
+  },
+  historyViewAllBtnText: { color: '#161616', fontSize: 13.5, fontWeight: '700' },
   historyEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 12 },
   historyEmptyText: { color: C.sub, fontSize: 13, textAlign: 'center' },
 
-  previewOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  previewFullImage: { width: '100%', aspectRatio: 1, borderRadius: 14 },
+  // Full-history grid, opened from the single-image preview above.
+  galleryOverlay: { flex: 1, backgroundColor: C.bg, paddingTop: 60 },
+  galleryHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 16,
+  },
+  galleryTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  galleryClose: { color: C.sub, fontSize: 20, fontWeight: '600' },
+  galleryGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
+    paddingHorizontal: 20, paddingBottom: 40,
+  },
+  galleryItem: {
+    width: '31.3%', aspectRatio: 1, borderRadius: 12,
+    borderWidth: 1.5, borderColor: '#161616',
+    overflow: 'hidden', backgroundColor: '#F0EFEA',
+  },
+  galleryItemImage: { width: '100%', height: '100%' },
+  galleryEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  galleryEmptyText: { color: C.sub, fontSize: 14, textAlign: 'center' },
   statEyebrow: { color: C.purple, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
   statHeadline: { color: C.text, fontSize: 16, fontWeight: '700' },
   statSub: { color: C.sub, fontSize: 12.5 },

@@ -329,6 +329,7 @@ export default function App() {
           autoArrange={afterSetup === 'revamp' || afterSetup === 'revamp-camera-roll'}
           onBack={() => { setScreen(afterSetup); setAfterSetup('profile'); }}
           onScanMore={() => setScreen('picker')}
+          onEditBoard={() => { setAfterBoardBuilder('setup'); setScreen('board-builder'); }}
           onDelete={() => {
             setActiveSetup(null);
             setScreen('profile');

@@ -343,7 +343,7 @@ function DotItemCard({ item, dot, onClose }) {
 }
 
 // ─── Main SetupScreen ─────────────────────────────────────────────────────────
-export default function SetupScreen({ setup, initialView = 'board', autoArrange = false, onBack, onScanMore, onDelete }) {
+export default function SetupScreen({ setup, initialView = 'board', autoArrange = false, onBack, onScanMore, onDelete, onEditBoard }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -688,6 +688,20 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
           </View>
         );
       })}
+
+      {/* Little edit pill pinned to the board's top-left — Board tab only
+          (the Arrange page reuses this grid and shouldn't show it). Opens the
+          board builder to edit this setup's layout. */}
+      {!interactive && onEditBoard && (
+        <TouchableOpacity
+          style={styles.boardEditBtn}
+          onPress={onEditBoard}
+          activeOpacity={0.85}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.boardEditText}>✎ Edit</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -1230,6 +1244,16 @@ const styles = StyleSheet.create({
   emptySlotContent: { alignItems: 'center', gap: 2 },
   emptySlotPlus: { color: C.sub, fontSize: 18, fontWeight: '300', lineHeight: 20 },
   slotLabel: { color: C.sub, fontSize: 12 },
+
+  // Edit-layout pill pinned to the board's top-left corner (Board tab).
+  boardEditBtn: {
+    position: 'absolute', top: 8, left: 8, zIndex: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5, borderColor: '#161616',
+    borderRadius: 20,
+    paddingVertical: 6, paddingHorizontal: 12,
+  },
+  boardEditText: { color: '#161616', fontSize: 12, fontWeight: '700' },
 
   monitorRow: { alignItems: 'center' },
   monitorSlot: { width: '68%', height: 100 },

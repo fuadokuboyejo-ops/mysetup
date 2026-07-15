@@ -182,7 +182,9 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
             const placements = setup.slots || {};
             const placed = Object.values(placements).filter(id => allItems.some(i => i.id === id)).length;
             return (
-            <View key={setup.id} style={S.setupCard}>
+            <View key={setup.id} style={S.setupCardWrap}>
+            <View style={S.setupCardHardShadow} />
+            <View style={S.setupCard}>
               <TouchableOpacity
                 onPress={() => onOpenSetup(setup)}
                 activeOpacity={0.8}
@@ -203,6 +205,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
                   <Text style={S.deleteBtnText}>Delete</Text>
                 </TouchableOpacity>
               </View>
+            </View>
             </View>
             );
           })}
@@ -314,32 +317,47 @@ const S = StyleSheet.create({
   newBtnText: { color: C.text, fontSize: 13, fontWeight: '500' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  grid: { paddingHorizontal: 16, paddingBottom: 60, gap: 14 },
+  grid: { paddingHorizontal: 20, paddingBottom: 60, gap: 18 },
 
-  setupCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  // White card + black border + hard offset shadow — same treatment as the
+  // option cards on the AI Revamp menu, so setups feel like part of the set.
+  setupCardWrap: { position: 'relative' },
+  setupCardHardShadow: {
+    position: 'absolute',
+    top: 3, left: 3, right: -3, bottom: -3,
+    backgroundColor: '#615A78',
+    borderRadius: 16,
+  },
+  setupCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1.5, borderColor: '#161616', overflow: 'hidden' },
 
   // Absolute-positioned grid (gap baked into coordinates via computeLayout), so
   // no padding/gap here — matches the builder + setup Board tab exactly.
-  previewBoard: { backgroundColor: C.bg, marginHorizontal: 12, marginVertical: 12, borderRadius: 16, position: 'relative' },
-  previewSlot: { backgroundColor: C.slot, borderRadius: 14, borderWidth: 0, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  previewSlotFilled: { backgroundColor: C.filled, borderStyle: 'solid', borderColor: C.border, borderWidth: 1 },
+  // Warm board tone (same as the RevampScreen board) so the white slots pop.
+  previewBoard: { backgroundColor: '#F0EFEA', marginHorizontal: 12, marginVertical: 12, borderRadius: 16, position: 'relative' },
+  previewSlot: { backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 0, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  previewSlotFilled: { backgroundColor: '#FFFFFF', borderStyle: 'solid', borderColor: '#E3E0D8', borderWidth: 1 },
   previewSlotImage: { width: '85%', height: '80%' },
   previewSlotContent: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   previewPlus: { color: C.sub, fontSize: 16, fontWeight: '300', lineHeight: 18 },
   previewLabel: { color: C.sub, fontSize: 11, fontWeight: '500' },
   previewLabelRotated: { transform: [{ rotate: '90deg' }] },
 
-  setupFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  setupFooter: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: '#EEEBE3',
+  },
   setupFooterMain: { flex: 1 },
-  setupName: { color: C.text, fontSize: 15, fontWeight: '600' },
-  setupCount: { color: C.sub, fontSize: 12, marginTop: 2 },
+  setupName: { color: C.text, fontSize: 16, fontWeight: '700' },
+  setupCount: { color: C.accent, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  // Red pill with a black border — same shape as the board "Save" pill.
   deleteBtn: {
-    paddingVertical: 8, paddingHorizontal: 14,
-    borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,59,48,0.35)',
-    backgroundColor: 'rgba(255,59,48,0.08)',
+    paddingVertical: 8, paddingHorizontal: 16,
+    borderRadius: 20, borderWidth: 1.5, borderColor: '#161616',
+    backgroundColor: '#E5484D',
     minWidth: 64, alignItems: 'center',
   },
-  deleteBtnText: { color: '#ff453a', fontSize: 12, fontWeight: '600' },
+  deleteBtnText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '700' },
 
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyText: { color: C.text, fontSize: 16, fontWeight: '600' },
