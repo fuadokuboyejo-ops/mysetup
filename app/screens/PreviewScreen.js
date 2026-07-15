@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
-  TextInput, KeyboardAvoidingView, Platform, ScrollView,
+  TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal,
 } from 'react-native';
 import { SCAN_ENDPOINT } from '../config/api';
+
+const mono = Platform.select({ ios: 'Courier New', android: 'monospace', default: 'monospace' });
+
+// A fixed pattern of bar widths so the barcode looks consistent between renders.
+const BARCODE_BARS = [3, 1, 2, 4, 1, 3, 1, 1, 2, 3, 1, 4, 2, 1, 3, 1, 2, 1, 4, 1, 2, 3, 1, 1, 3, 2, 4, 1, 2, 1, 3, 1, 2, 4, 1, 1, 2, 3, 1, 2];
 
 export default function PreviewScreen({ photoUri, photoBase64, productType, onResults, onRetake }) {
   const [scanning, setScanning] = useState(false);
@@ -28,6 +33,10 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
   const [mousePolling, setMousePolling] = useState('');
   const [mouseConnection, setMouseConnection] = useState('');
   const [mouseSensor, setMouseSensor] = useState('');
+  const [mouseSwitch, setMouseSwitch] = useState('');
+  // Receipt "ITEM #", generated once so it stays stable while editing.
+  const [itemNo] = useState(() => String(1000 + Math.floor(Math.random() * 9000)));
+  const [showSavedReceipt, setShowSavedReceipt] = useState(false);
 
   // PC build manual entry — we ask for the components, no image analysis.
   const [pcCpu, setPcCpu] = useState('');
@@ -141,6 +150,7 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
         polling: mousePolling.trim(),
         connection: mouseConnection.trim(),
         sensor: mouseSensor.trim(),
+        switches: mouseSwitch.trim(),
       },
     }, photoUri);
   };
@@ -179,19 +189,102 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
     }, photoUri);
   };
 
-  return (
-    <View style={styles.container}>
-      <Image source={{ uri: photoUri }} style={[styles.preview, manualEntry && styles.keyboardPreview]} resizeMode="contain" />
+  // Receipt summary values (mouse).
+  const mouseFilled = [mouseBrand, mouseModel, mouseWeight, mouseConnection, mouseDpi, mouseSwitch]
+    .filter(v => v.trim()).length;
+  const conn = mouseConnection.trim().toLowerCase();
+  const connAbbrev = conn.startsWith('wireless') ? 'WL' : conn.startsWith('wired') ? 'WR' : '--';
 
-      <View style={[styles.overlay, manualEntry && styles.keyboardOverlay]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={onRetake} style={styles.retakeButton} disabled={scanning}>
-            <Text style={styles.retakeText}>← Retake</Text>
-          </TouchableOpacity>
+  // Tapping "save to my setup" first shows the finished receipt as a
+  // confirmation; "Done" on that then actually commits via saveMouseDetails.
+  const openSavedReceipt = () => {
+    if (!mouseModel.trim()) {
+      Alert.alert('Model needed', 'Add the mouse model before saving.');
+      return;
+    }
+    setShowSavedReceipt(true);
+  };
+
+  const confirmSaveMouse = () => {
+    setShowSavedReceipt(false);
+    saveMouseDetails();
+  };
+
+  const renderReceipt = (readOnly) => (
+    <View style={styles.receipt}>
+      <Zig dir="up" />
+      <View style={styles.receiptBody}>
+        <Text style={styles.rTitle}>MY SETUP</Text>
+        <Text style={styles.rSubtitle}>GEAR RECEIPT · 2026</Text>
+
+        <View style={styles.rMetaRow}>
+          <Text style={styles.rMeta}>ITEM #: {itemNo}</Text>
+          <Text style={styles.rMeta}>MOUSE</Text>
         </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={manualEntry && styles.keyboardAvoiding}>
-          <View style={[styles.bottomPanel, manualEntry && styles.keyboardPanel]}>
+        <DashedLine />
+        <Text style={styles.rSection}>— SPECIFICATIONS —</Text>
+
+        <ReceiptRow readOnly={readOnly} label="BRAND" value={mouseBrand} onChangeText={setMouseBrand} placeholder="tap to type" />
+        <ReceiptRow readOnly={readOnly} label="MODEL" value={mouseModel} onChangeText={setMouseModel} placeholder="tap to type" />
+        <ReceiptRow readOnly={readOnly} label="WEIGHT" value={mouseWeight} onChangeText={setMouseWeight} placeholder="tap to type" suffix="g" keyboardType="numbers-and-punctuation" />
+        {!readOnly && (
+          <View style={styles.receiptChipRow}>
+            {['45', '55', '63', '75', '90'].map(value => (
+              <QuickChip key={value} label={`${value}g`} selected={mouseWeight === value} onPress={() => setMouseWeight(value)} dark />
+            ))}
+          </View>
+        )}
+
+        <ReceiptRow readOnly={readOnly} label="CONNECTION" optional value={mouseConnection} onChangeText={setMouseConnection} placeholder="tap to type" />
+        {!readOnly && (
+          <View style={styles.receiptChipRow}>
+            {['Wireless', 'Wired'].map(value => (
+              <QuickChip key={value} label={value} selected={mouseConnection === value} onPress={() => setMouseConnection(value)} dark />
+            ))}
+          </View>
+        )}
+
+        <ReceiptRow readOnly={readOnly} label="DPI" optional value={mouseDpi} onChangeText={setMouseDpi} placeholder="tap to type" keyboardType="numbers-and-punctuation" />
+        <ReceiptRow readOnly={readOnly} label="SWITCH" optional value={mouseSwitch} onChangeText={setMouseSwitch} placeholder="tap to type" last />
+
+        <DashedLine />
+        <View style={styles.rMetaRow}>
+          <Text style={styles.rLoggedLabel}>ITEMS LOGGED</Text>
+          <Text style={styles.rLoggedVal}>{mouseFilled} / 6</Text>
+        </View>
+        <DashedLine />
+
+        <Text style={styles.rStars}>✦    ✦    ✦    ✦</Text>
+        <Text style={styles.rFooter}>SAVED TO YOUR SETUP</Text>
+        <Text style={styles.rFooterSub}>KEEP THIS RECEIPT FOR YOUR RECORDS</Text>
+
+        <Barcode />
+        <Text style={styles.rBarcodeText}>{itemNo} · {mouseWeight.trim() || '--'}g · {connAbbrev}</Text>
+      </View>
+      <Zig dir="down" />
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, isMouse && styles.mouseContainer]}>
+      <Image
+        source={{ uri: photoUri }}
+        style={[styles.preview, manualEntry && !isMouse && styles.keyboardPreview, isMouse && styles.mousePreview]}
+        resizeMode={isMouse ? 'cover' : 'contain'}
+      />
+
+      <View style={[styles.overlay, manualEntry && styles.keyboardOverlay]}>
+        <View style={[styles.topBar, isMouse && styles.mouseTopBar]}>
+          {!showSavedReceipt && (
+            <TouchableOpacity onPress={onRetake} style={styles.retakeButton} disabled={scanning}>
+              <Text style={styles.retakeText}>← Retake</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[manualEntry && styles.keyboardAvoiding, isMouse && styles.mouseAvoiding]}>
+          <View style={[styles.bottomPanel, manualEntry && styles.keyboardPanel, isMouse && styles.mousePanel]}>
             {isKeyboard ? (
               <ScrollView
                 keyboardShouldPersistTaps="handled"
@@ -287,40 +380,12 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
               <ScrollView
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.keyboardPanelContent}
+                contentContainerStyle={styles.receiptScroll}
               >
-                <Text style={styles.panelTitle}>Mouse details</Text>
-                <Text style={styles.panelSub}>Add the specs yourself before saving.</Text>
+                {renderReceipt(false)}
 
-                <View style={styles.manualCard}>
-                  <Field label="Brand" value={mouseBrand} onChangeText={setMouseBrand} placeholder="Logitech, Razer, Pulsar..." />
-                  <Field label="Model" value={mouseModel} onChangeText={setMouseModel} placeholder="G Pro X Superlight, Viper V2..." />
-
-                  <View style={styles.fieldGroup}>
-                    <Field label="Weight (g)" value={mouseWeight} onChangeText={setMouseWeight} placeholder="63" keyboardType="numbers-and-punctuation" />
-                    <View style={styles.chipRow}>
-                      {['45', '55', '63', '75', '90'].map(value => (
-                        <QuickChip key={value} label={`${value}g`} selected={mouseWeight === value} onPress={() => setMouseWeight(value)} />
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.fieldGroup}>
-                    <Field label="Connection (optional)" value={mouseConnection} onChangeText={setMouseConnection} placeholder="Wireless" />
-                    <View style={styles.chipRow}>
-                      {['Wireless', 'Wired'].map(value => (
-                        <QuickChip key={value} label={value} selected={mouseConnection === value} onPress={() => setMouseConnection(value)} />
-                      ))}
-                    </View>
-                  </View>
-
-                  <Field label="DPI (optional)" value={mouseDpi} onChangeText={setMouseDpi} placeholder="26000" keyboardType="numbers-and-punctuation" />
-                  <Field label="Polling rate (optional)" value={mousePolling} onChangeText={setMousePolling} placeholder="1000 Hz, 8000 Hz..." />
-                  <Field label="Sensor (optional)" value={mouseSensor} onChangeText={setMouseSensor} placeholder="HERO 2, Focus Pro 30K..." />
-                </View>
-
-                <TouchableOpacity style={[styles.analyzeButton, styles.keyboardSaveButton]} onPress={saveMouseDetails} activeOpacity={0.85}>
-                  <Text style={[styles.analyzeText, styles.keyboardSaveButtonText]}>Save Mouse Details</Text>
+                <TouchableOpacity style={styles.receiptSaveBtn} onPress={openSavedReceipt} activeOpacity={0.85}>
+                  <Text style={styles.receiptSaveText}>save to my setup</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : isPc ? (
@@ -378,6 +443,29 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
           </View>
         </KeyboardAvoidingView>
       </View>
+
+      {/* Saved-receipt confirmation */}
+      <Modal visible={showSavedReceipt} transparent animationType="slide" onRequestClose={() => setShowSavedReceipt(false)}>
+        <View style={styles.savedOverlay}>
+          <View style={[styles.savedTopBar, styles.mouseTopBar]}>
+            <TouchableOpacity
+              style={styles.retakeButton}
+              onPress={() => setShowSavedReceipt(false)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.retakeText}>← Back</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.savedScroll} showsVerticalScrollIndicator={false}>
+            {renderReceipt(true)}
+            <TouchableOpacity style={styles.savedDoneBtn} onPress={confirmSaveMouse} activeOpacity={0.85}>
+              <Text style={styles.savedDoneText}>Done</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -397,15 +485,78 @@ function Field({ label, ...props }) {
   );
 }
 
-function QuickChip({ label, selected, onPress }) {
+function QuickChip({ label, selected, onPress, dark }) {
   return (
     <TouchableOpacity
-      style={[styles.quickChip, selected && styles.quickChipSelected]}
+      style={[styles.quickChip, selected && (dark ? styles.quickChipSelectedDark : styles.quickChipSelected)]}
       onPress={onPress}
       activeOpacity={0.8}
     >
       <Text style={[styles.quickChipText, selected && styles.quickChipTextSelected]}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+// ── Gear receipt pieces (mouse details) ──────────────────────────────────────
+// A spec line on the receipt: label on the left, an inline text field on the
+// right that reads like typed receipt text (empty optional rows show a faint
+// italic "tap to add").
+function ReceiptRow({ label, optional, value, onChangeText, placeholder, suffix, last, readOnly, ...inputProps }) {
+  return (
+    <View style={[styles.rRow, last && styles.rRowLast]}>
+      <Text style={styles.rRowLabel}>
+        {label}{optional ? <Text style={styles.rOpt}> (OPT)</Text> : null}
+      </Text>
+      <View style={styles.rValueWrap}>
+        {readOnly ? (
+          <Text style={[styles.rInput, styles.rValueRO, !value.trim() && styles.rInputEmpty]} numberOfLines={1}>
+            {value.trim() ? `${value}${suffix ? ` ${suffix}` : ''}` : '—'}
+          </Text>
+        ) : (
+          <>
+            <TextInput
+              style={[styles.rInput, !value && styles.rInputEmpty]}
+              value={value}
+              onChangeText={onChangeText}
+              placeholder={placeholder || 'tap to add'}
+              placeholderTextColor="#B8AF9A"
+              autoCapitalize="words"
+              autoCorrect={false}
+              textAlign="right"
+              {...inputProps}
+            />
+            {suffix && value.trim() ? <Text style={styles.rSuffix}> {suffix}</Text> : null}
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function DashedLine() {
+  return <Text style={styles.dashedLine} numberOfLines={1}>{'- '.repeat(40)}</Text>;
+}
+
+function Barcode() {
+  return (
+    <View style={styles.barcode}>
+      {BARCODE_BARS.map((w, i) => (
+        <View key={i} style={{ width: w, height: 46, backgroundColor: '#2B271E', marginRight: 2 }} />
+      ))}
+    </View>
+  );
+}
+
+// Torn zigzag edge for the top/bottom of the receipt — a row of paper-coloured
+// triangles pointing up (top) or down (bottom).
+const ZIG_TEETH = Array.from({ length: 20 });
+function Zig({ dir }) {
+  return (
+    <View style={styles.zigRow}>
+      {ZIG_TEETH.map((_, i) => (
+        <View key={i} style={dir === 'up' ? styles.toothUp : styles.toothDown} />
+      ))}
+    </View>
   );
 }
 
@@ -506,6 +657,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6D5EF0',
     borderColor: '#6D5EF0',
   },
+  quickChipSelectedDark: {
+    backgroundColor: '#161616',
+    borderColor: '#161616',
+  },
   quickChipText: { color: '#6E6E73', fontSize: 13, fontWeight: '600' },
   quickChipTextSelected: { color: '#FFFFFF' },
 
@@ -521,4 +676,81 @@ const styles = StyleSheet.create({
   analyzeDisabled: { opacity: 0.6 },
   analyzeText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
   scanningRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+
+  // ── Gear receipt (mouse details) ──
+  // Cream page behind everything so that below the receipt it reads as paper
+  // (not the photo, not black); the photo is a fixed hero pinned to the top.
+  mouseContainer: { backgroundColor: '#FFFFFF' },
+  mousePreview: { flex: 0, height: 330, width: '100%' },
+  mousePanel: { backgroundColor: 'transparent' },
+  // Pin the retake bar so it doesn't push the receipt down, then start the
+  // receipt just above the photo's bottom edge so the torn top overlaps it.
+  mouseTopBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 5 },
+  mouseAvoiding: { marginTop: 322 },
+  receiptScroll: { paddingTop: 0, paddingHorizontal: 0, paddingBottom: 40 },
+  receipt: {
+    alignSelf: 'stretch',
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  receiptBody: { backgroundColor: '#FFFFFF', paddingHorizontal: 22, paddingVertical: 20 },
+
+  rTitle: { fontFamily: mono, fontSize: 21, fontWeight: '700', color: '#2B271E', textAlign: 'center', letterSpacing: 6 },
+  rSubtitle: { fontFamily: mono, fontSize: 10.5, color: '#8C846F', textAlign: 'center', letterSpacing: 2, marginTop: 4 },
+
+  rMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
+  rMeta: { fontFamily: mono, fontSize: 10.5, color: '#8C846F', letterSpacing: 1 },
+
+  rSection: { fontFamily: mono, fontSize: 12, fontWeight: '700', color: '#2B271E', textAlign: 'center', letterSpacing: 2, marginVertical: 4 },
+
+  rRow: {
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1, borderBottomColor: '#CFC6B0', borderStyle: 'dashed',
+  },
+  rRowLast: { borderBottomWidth: 0 },
+  receiptChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 2 },
+  rRowLabel: { fontFamily: mono, fontSize: 12.5, fontWeight: '700', color: '#2B271E', letterSpacing: 1 },
+  rOpt: { fontSize: 9, color: '#8C846F', fontWeight: '700' },
+  rValueWrap: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-end' },
+  rInput: { flex: 1, fontFamily: mono, fontSize: 13, color: '#2B271E', padding: 0, margin: 0 },
+  rValueRO: { textAlign: 'right' },
+  rInputEmpty: { fontStyle: 'italic', color: '#B8AF9A' },
+  rSuffix: { fontFamily: mono, fontSize: 13, color: '#2B271E' },
+
+  dashedLine: { fontFamily: mono, fontSize: 12, color: '#B8AF9A', letterSpacing: 0, marginVertical: 8 },
+
+  rLoggedLabel: { fontFamily: mono, fontSize: 12.5, fontWeight: '700', color: '#2B271E', letterSpacing: 1 },
+  rLoggedVal: { fontFamily: mono, fontSize: 13, fontWeight: '700', color: '#2B271E' },
+
+  rStars: { textAlign: 'center', color: '#8C846F', fontSize: 12, letterSpacing: 2, marginTop: 12 },
+  rFooter: { fontFamily: mono, fontSize: 12, fontWeight: '700', color: '#2B271E', textAlign: 'center', letterSpacing: 2, marginTop: 8 },
+  rFooterSub: { fontFamily: mono, fontSize: 9, color: '#8C846F', textAlign: 'center', letterSpacing: 1, marginTop: 4 },
+
+  barcode: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', marginTop: 16 },
+  rBarcodeText: { fontFamily: mono, fontSize: 11, color: '#2B271E', textAlign: 'center', letterSpacing: 2, marginTop: 6 },
+
+  zigRow: { height: 9, flexDirection: 'row', overflow: 'hidden' },
+  toothUp: {
+    width: 0, height: 0,
+    borderLeftWidth: 11, borderRightWidth: 11, borderBottomWidth: 9,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFFFFF',
+  },
+  toothDown: {
+    width: 0, height: 0,
+    borderLeftWidth: 11, borderRightWidth: 11, borderTopWidth: 9,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#FFFFFF',
+  },
+
+  receiptSaveBtn: { marginTop: 22, marginHorizontal: 20, backgroundColor: '#F2F0EA', borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
+  receiptSaveText: { color: '#1A1A1A', fontSize: 15, fontWeight: '600' },
+
+  savedOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center' },
+  // The Modal already insets content by the safe area, so this needs a much
+  // smaller top padding than the raw screen's topBar (56) to visually line up
+  // the Back button with where the Retake button sat.
+  savedTopBar: { paddingTop: 12, paddingHorizontal: 20 },
+  savedScroll: { paddingHorizontal: 24, paddingTop: 100, paddingBottom: 48 },
+  savedDoneBtn: { marginTop: 20, marginHorizontal: 20, backgroundColor: '#161616', borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
+  savedDoneText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 });

@@ -37,6 +37,20 @@ Planned features and improvements for mysetup.
 
 ---
 
+## Desks
+
+- **Different desk styles** — let users pick the desk their setup sits on, so the board and AI-generated photo reflect it instead of one generic desk
+- **Standing desk** — adjustable-height frame; show it raised or lowered in generated photos
+- **L-shaped / corner desk** — extra surface area with a second run of slots for dual-zone setups
+- **Gaming desk** — carbon-texture top, RGB edge lighting, headphone hook and cup holder
+- **Minimal desk** — small, clean top for compact setups
+- **Glass desk** — transparent top with a modern look
+- **Wooden / rustic desk** — warm wood grain for cozy or home-office setups
+- **Ultrawide / large desk** — wider board layout for multi-monitor and full peripheral spreads
+- **Desk picker in the board builder** — choose the desk up front; board slot sizes and the AI revamp prompt adapt to the chosen desk
+
+---
+
 ## Features
 
 - Product detail pages — tapping an item opens a full product page with specs, links, and community ratings

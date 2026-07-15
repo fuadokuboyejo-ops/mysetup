@@ -113,7 +113,7 @@ function GearOptionCard({ image, title, body, onPress }) {
   );
 }
 
-export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDifferentGear, onExistingSetup }) {
+export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDifferentGear, onCameraRoll, onExistingSetup }) {
   const [generationsUsed, setGenerationsUsed] = useState(0);
   const [history, setHistory] = useState([]);
   const [previewImage, setPreviewImage] = useState(null);
@@ -166,20 +166,6 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
   const finishGear = (photo) => {
     setGearMode(null);
     onDifferentGear(photo);
-  };
-
-  const pickFromCameraRoll = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow photo library access to pick a photo.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], quality: 0.5, base64: true, allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      finishGear({ uri: result.assets[0].uri, base64: result.assets[0].base64 });
-    }
   };
 
   const takePhotoOfSetup = async () => {
@@ -298,7 +284,7 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
                         title={o.title}
                         body={o.body}
                         onPress={
-                          o.key === 'camera-roll' ? pickFromCameraRoll
+                          o.key === 'camera-roll' ? () => { setGearMode(null); onCameraRoll?.(); }
                             : o.key === 'take-photo' ? takePhotoOfSetup
                               : () => setGearMode('setups')
                         }

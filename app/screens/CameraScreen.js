@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,6 +15,7 @@ const OUTLINE_SIZES = {
 export default function CameraScreen({ onPhotoTaken, onBack, productType, productGuide, livePhotoMode }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState('back');
+  const [cameraReady, setCameraReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [recording, setRecording] = useState(false);
   // Two-step live photo mode: 'still' → take product photo, 'video' → record wallpaper
@@ -78,7 +79,7 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
   };
 
   const takePhoto = async () => {
-    if (!cameraRef.current || capturing) return;
+    if (!cameraRef.current || !cameraReady || capturing) return;
     setCapturing(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.4, base64: true });
@@ -97,7 +98,7 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || recording) return;
+    if (!cameraRef.current || !cameraReady || recording) return;
     setRecording(true);
     try {
       const video = await cameraRef.current.recordAsync({ maxDuration: 5 });
@@ -139,16 +140,30 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
 
   return (
     <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing={facing}
-        mode={isVideoStep ? 'video' : 'picture'}
-        onLayout={e => {
-          const { width, height } = e.nativeEvent.layout;
-          if (width && height) previewAspectRef.current = width / height;
-        }}
-      >
+      <View style={styles.cameraStage}>
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          active
+          facing={facing}
+          mode={isVideoStep ? 'video' : 'picture'}
+          responsiveOrientationWhenOrientationLocked={Platform.OS === 'ios'}
+          onCameraReady={() => setCameraReady(true)}
+          onMountError={(error) => {
+            setCameraReady(false);
+            Alert.alert('Camera unavailable', error?.message || 'The camera preview could not start.');
+          }}
+          onLayout={e => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width && height) previewAspectRef.current = width / height;
+          }}
+        />
+        {!cameraReady && (
+          <View style={styles.cameraLoading} pointerEvents="none">
+            <ActivityIndicator color="#FFFFFF" size="large" />
+          </View>
+        )}
+        <View style={styles.cameraOverlay} pointerEvents="box-none">
         {/* Top bar */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={handleBack} style={styles.topButton}>
@@ -156,7 +171,10 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
           </TouchableOpacity>
           <Text style={styles.topTitle}>{displayTitle}</Text>
           <TouchableOpacity
-            onPress={() => setFacing(f => (f === 'back' ? 'front' : 'back'))}
+            onPress={() => {
+              setCameraReady(false);
+              setFacing(current => (current === 'back' ? 'front' : 'back'));
+            }}
             style={styles.topButton}
           >
             <Text style={styles.topButtonText}>⟳</Text>
@@ -235,7 +253,8 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
 
           <View style={styles.galleryButton} />
         </View>
-      </CameraView>
+        </View>
+      </View>
     </View>
   );
 }
@@ -243,7 +262,10 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   centered: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  camera: { flex: 1, justifyContent: 'space-between' },
+  cameraStage: { flex: 1, position: 'relative', overflow: 'hidden' },
+  camera: { ...StyleSheet.absoluteFillObject },
+  cameraOverlay: { flex: 1, justifyContent: 'space-between' },
+  cameraLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
 
   topBar: {
     flexDirection: 'row',

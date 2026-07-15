@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { View, Text, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import OnboardingScreen from './screens/OnboardingScreen';
 import OnboardingBoardScreen from './screens/OnboardingBoardScreen';
@@ -9,16 +10,17 @@ import OnboardingStyleScreen from './screens/OnboardingStyleScreen';
 import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
-import { createSetup, getIsPremium } from './config/setup';
+import { createSetup, getIsPremium, addSetupItem } from './config/setup';
+import { API_BASE } from './config/api';
 import HomeScreen from './screens/HomeScreen';
 import ProductPickerScreen from './screens/ProductPickerScreen';
 import CameraScreen from './screens/CameraScreen';
 import BoardBuilderScreen from './screens/BoardBuilderScreen';
-import PreviewScreen from './screens/PreviewScreen';
-import ResultsScreen from './screens/ResultsScreen';
+import GearReceiptScreen from './screens/GearReceiptScreen';
 import SetupScreen from './screens/SetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import RevampMenuScreen from './screens/RevampMenuScreen';
+import RevampCameraRollScreen from './screens/RevampCameraRollScreen';
 import RevampScreen from './screens/RevampScreen';
 import RevampPaywallScreen from './screens/RevampPaywallScreen';
 
@@ -26,7 +28,7 @@ export default function App() {
   const [screen, setScreen] = useState('onboarding');
   const [photoUri, setPhotoUri] = useState(null);
   const [photoBase64, setPhotoBase64] = useState(null);
-  const [results, setResults] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [productType, setProductType] = useState(null);
   const [productGuide, setProductGuide] = useState(null);
   const [activeSetup, setActiveSetup] = useState(null);
@@ -42,10 +44,65 @@ export default function App() {
   // A photo of the user's setup chosen for "Try different gear" (camera roll,
   // camera, or a saved setup's photo) — null for the "Design from scratch" path.
   const [revampBasePhoto, setRevampBasePhoto] = useState(null);
+  const [revampDraftPhoto, setRevampDraftPhoto] = useState(null);
+  const [revampDraftSetup, setRevampDraftSetup] = useState(null);
 
   useEffect(() => { getIsPremium().then(setIsPremiumState); }, []);
 
   const openRevamp = () => setScreen(isPremium ? 'revamp-menu' : 'revamp-paywall');
+
+  // ── Adding a scanned / manually-entered item to the library ────────────────
+  // (Replaces the old Results screen.) Runs the background cutout, saves the
+  // item, then returns to the picker so the user can scan the next thing.
+  const attemptCutout = async (photo) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/remove-bg`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.image) return data.image;
+      }
+    } catch {
+      // fall through to the retry / skip prompt below
+    }
+    return null;
+  };
+
+  const finishAddItem = async (product, image, isCutout) => {
+    try {
+      await addSetupItem(activeSetup?.id || 'default', product, image, isCutout);
+      setScreen('picker');
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addScannedItem = async (product) => {
+    setSaving(true);
+    const cutImage = await attemptCutout(photoBase64);
+    if (cutImage) {
+      await finishAddItem(product, cutImage, true);
+      return;
+    }
+    // Background removal failed — some products (monitors/displays) fill the
+    // frame with no isolated foreground. Ask instead of silently keeping the
+    // raw photo: items without a real cutout can't go on the board yet.
+    setSaving(false);
+    Alert.alert(
+      "Couldn't cut out background",
+      'This item will still be saved to your library, but it needs a clean cutout before it can go on your board.',
+      [
+        { text: 'Try again', onPress: () => addScannedItem(product) },
+        { text: 'Save without cutout', onPress: () => { setSaving(true); finishAddItem(product, photoBase64, false); } },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
 
   // Monitors are captured as a regular photo, same as any other product.
   // (Live monitor wallpaper is shelved — see FUTURE_UPDATES.md.)
@@ -88,6 +145,41 @@ export default function App() {
     setSetupInitialView('board');
     setAfterSetup('revamp');
     setScreen('setup');
+  };
+
+  const openRevampCameraRoll = () => {
+    setRevampDraftPhoto(null);
+    setRevampDraftSetup(null);
+    setScreen('revamp-camera-roll');
+  };
+
+  const getOrCreateRevampDraftSetup = async () => {
+    if (revampDraftSetup) return revampDraftSetup;
+    const setup = await createSetup('Photo Revamp', 'pc');
+    setRevampDraftSetup(setup);
+    return setup;
+  };
+
+  const editRevampDraftBoard = async () => {
+    const setup = await getOrCreateRevampDraftSetup();
+    setActiveSetup(setup);
+    setAfterBoardBuilder('revamp-camera-roll');
+    setScreen('board-builder');
+  };
+
+  const arrangeRevampDraftBoard = async () => {
+    const setup = await getOrCreateRevampDraftSetup();
+    setActiveSetup(setup);
+    setSetupInitialView('board');
+    setAfterSetup('revamp-camera-roll');
+    setScreen('setup');
+  };
+
+  const continueCameraRollRevamp = async (photo) => {
+    const setup = await getOrCreateRevampDraftSetup();
+    setActiveSetup(setup);
+    setRevampBasePhoto(photo);
+    setScreen('revamp');
   };
 
   function renderScreen() {
@@ -200,36 +292,29 @@ export default function App() {
           setup={activeSetup}
           onDone={(setup) => {
             setActiveSetup(setup);
+            if (afterBoardBuilder === 'revamp-camera-roll') setRevampDraftSetup(setup);
             setScreen(afterBoardBuilder);
             setAfterBoardBuilder('setup');
           }}
-          onCancel={() => setScreen('profile')}
+          onCancel={() => {
+            if (afterBoardBuilder === 'revamp-camera-roll') {
+              setScreen('revamp-camera-roll');
+              setAfterBoardBuilder('setup');
+            } else {
+              setScreen('profile');
+            }
+          }}
         />
       );
     }
     if (screen === 'preview') {
       return (
-        <PreviewScreen
+        <GearReceiptScreen
           photoUri={photoUri}
           photoBase64={photoBase64}
           productType={productType}
-          onResults={(product, uri) => { setResults(product); setPhotoUri(uri); setScreen('results'); }}
-          onRetake={() => setScreen('camera')}
-        />
-      );
-    }
-    if (screen === 'results') {
-      return (
-        <ResultsScreen
-          items={results}
-          photoUri={photoUri}
-          photoBase64={photoBase64}
-          setupId={activeSetup?.id}
-          onScanAgain={() => setScreen('picker')}
-          onViewSetup={() => {
-            setSetupInitialView('items');
-            setScreen('setup');
-          }}
+          onResults={(product, uri) => { setPhotoUri(uri); addScannedItem(product); }}
+          onBack={() => setScreen('picker')}
         />
       );
     }
@@ -238,7 +323,7 @@ export default function App() {
         <SetupScreen
           setup={activeSetup}
           initialView={setupInitialView}
-          autoArrange={afterSetup === 'revamp'}
+          autoArrange={afterSetup === 'revamp' || afterSetup === 'revamp-camera-roll'}
           onBack={() => { setScreen(afterSetup); setAfterSetup('profile'); }}
           onScanMore={() => setScreen('picker')}
           onDelete={() => {
@@ -254,7 +339,21 @@ export default function App() {
           onBack={() => setScreen('home')}
           onDesignFromScratch={designFromScratch}
           onDifferentGear={(photo) => { setRevampBasePhoto(photo || null); setScreen('revamp'); }}
+          onCameraRoll={openRevampCameraRoll}
           onExistingSetup={() => setScreen('profile')}
+        />
+      );
+    }
+    if (screen === 'revamp-camera-roll') {
+      return (
+        <RevampCameraRollScreen
+          photo={revampDraftPhoto}
+          setup={revampDraftSetup}
+          onPhotoChange={setRevampDraftPhoto}
+          onBack={() => setScreen('revamp-menu')}
+          onEditBoard={editRevampDraftBoard}
+          onArrangeBoard={arrangeRevampDraftBoard}
+          onContinue={continueCameraRollRevamp}
         />
       );
     }
@@ -295,5 +394,26 @@ export default function App() {
     );
   }
 
-  return <SafeAreaProvider>{renderScreen()}</SafeAreaProvider>;
+  return (
+    <SafeAreaProvider>
+      {renderScreen()}
+      {saving && (
+        <View style={styles.savingOverlay}>
+          <ActivityIndicator color="#fff" size="large" />
+          <Text style={styles.savingText}>Adding to your setup…</Text>
+        </View>
+      )}
+    </SafeAreaProvider>
+  );
 }
+
+const styles = StyleSheet.create({
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  savingText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+});
