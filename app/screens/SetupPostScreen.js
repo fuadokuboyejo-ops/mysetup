@@ -122,7 +122,6 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
               <View style={styles.extrasCards}>
                 {post.extras.map((extra, i) => (
                   <View key={i} style={[styles.extraRow, i > 0 && styles.extraRowBorder]}>
-                    <Text style={styles.extraRowIcon}>{extra.icon}</Text>
                     <Text style={styles.extraRowText}>{extra.label}</Text>
                   </View>
                 ))}
@@ -218,8 +217,7 @@ const styles = StyleSheet.create({
   extrasTitle: { color: C.text, fontSize: 17, fontWeight: '700' },
   extrasSubtitle: { color: C.sub, fontSize: 13 },
   extrasCards: { backgroundColor: '#F4F4F4', borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
-  extraRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  extraRow: { flexDirection: 'row', alignItems: 'center', padding: 16 },
   extraRowBorder: { borderTopWidth: 1, borderTopColor: C.border },
-  extraRowIcon: { fontSize: 20, width: 72, textAlign: 'center' },
   extraRowText: { color: C.text, fontSize: 15, fontWeight: '600' },
 });
