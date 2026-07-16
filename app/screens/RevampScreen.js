@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Modal, StatusBar, TextInput,
+  ActivityIndicator, Alert, Modal, StatusBar, TextInput, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image as ExpoImage } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
@@ -33,6 +34,20 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
   const [setups, setSetups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const loadPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!generating) return;
+    loadPulse.setValue(1);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(loadPulse, { toValue: 1.06, duration: 900, useNativeDriver: true }),
+        Animated.timing(loadPulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [generating]);
   const [image, setImage] = useState(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [savingToCameraRoll, setSavingToCameraRoll] = useState(false);
@@ -316,9 +331,14 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
       {/* Generating overlay */}
       <Modal visible={generating} transparent animationType="fade">
         <View style={styles.loadOverlay}>
-          <ActivityIndicator color="#fff" size="large" />
-          <Text style={styles.loadText}>Generating your setup photo…</Text>
-          <Text style={styles.loadSub}>This can take up to a minute.</Text>
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: loadPulse }] }]}>
+            <ExpoImage source={require('../assets/loadingscreen.png')} style={StyleSheet.absoluteFill} contentFit="cover" />
+          </Animated.View>
+          <View style={styles.loadContent}>
+            <ActivityIndicator color="#161616" size="large" />
+            <Text style={styles.loadText}>Generating your setup photo…</Text>
+            <Text style={styles.loadSub}>This can take up to a minute.</Text>
+          </View>
         </View>
       </Modal>
 
@@ -433,9 +453,10 @@ const styles = StyleSheet.create({
   saveBtn: { borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#161616', paddingVertical: 16, alignItems: 'center' },
   saveText: { color: C.text, fontSize: 15, fontWeight: '700' },
 
-  loadOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
-  loadText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  loadSub: { color: '#c8c8ce', fontSize: 13 },
+  loadOverlay: { flex: 1, backgroundColor: '#DCD3E8', alignItems: 'center', justifyContent: 'flex-end' },
+  loadContent: { alignItems: 'center', gap: 10, paddingBottom: 90, paddingHorizontal: 40 },
+  loadText: { color: '#161616', fontSize: 16, fontWeight: '700' },
+  loadSub: { color: '#5B5566', fontSize: 13 },
 
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.panel, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, gap: 8 },

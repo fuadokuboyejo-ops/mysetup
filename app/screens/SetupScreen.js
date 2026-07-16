@@ -4,10 +4,12 @@ import {
   StyleSheet, Alert, ActivityIndicator, PanResponder, Modal, SafeAreaView, StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup } from '../config/setup';
 import {
   computeLayout, normalizeNodes, nodeSpan, getVisualScale,
 } from '../config/boardLayout';
+import PostComposerScreen from './PostComposerScreen';
 
 const SLOT_DEFS = [
   { key: 'monitor',    label: 'monitor',    categories: ['monitor', 'display', 'screen', 'tv'] },
@@ -366,6 +368,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   // Full-screen arrange page (drag items onto/between slots) — opens
   // immediately when arriving via a deep link (e.g. Revamp's "Arrange board").
   const [arranging, setArranging] = useState(autoArrange);
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
 
   // Board item drag — place from the tray onto a slot, or move between slots.
   const [boardDrag, setBoardDrag] = useState(null);       // { item, fromNode }
@@ -1082,9 +1085,18 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             </View>
             <Text style={styles.arrangeHint}>Tap an empty slot on the board to place an item from your library.</Text>
 
-            <TouchableOpacity style={styles.arrangeBoardBtn} onPress={() => setArranging(true)} activeOpacity={0.85}>
-              <Text style={styles.arrangeBoardText}>⤢  Arrange board</Text>
-            </TouchableOpacity>
+            <View style={styles.boardActionsRow}>
+              <TouchableOpacity style={styles.arrangeBoardBtn} onPress={() => setArranging(true)} activeOpacity={0.85}>
+                <Text style={styles.arrangeBoardText}>⤢  Arrange board</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.postBtn}
+                onPress={() => setPostComposerOpen(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.postBtnText}>Post</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
 
@@ -1143,6 +1155,22 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             )}
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Post composer — Modal renders in its own native view hierarchy,
+          outside the root SafeAreaProvider's reach, so it needs its own. */}
+      <Modal visible={postComposerOpen} animationType="slide" onRequestClose={() => setPostComposerOpen(false)}>
+        <SafeAreaProvider>
+          <PostComposerScreen
+            setup={setup}
+            items={items}
+            onClose={() => setPostComposerOpen(false)}
+            onSubmit={(data) => {
+              setPostComposerOpen(false);
+              Alert.alert('Posted', `"${data.title}" is now live on your feed.`);
+            }}
+          />
+        </SafeAreaProvider>
       </Modal>
 
     </View>
@@ -1288,7 +1316,10 @@ const styles = StyleSheet.create({
   addPeripheralBtnRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   addPeripheralPlusRow: { color: C.sub, fontSize: 20, fontWeight: '300', width: 72, textAlign: 'center' },
   addPeripheralTextRow: { color: C.sub, fontSize: 15 },
-  arrangeBoardBtn: { marginTop: 16, borderRadius: 14, backgroundColor: C.accent, paddingVertical: 15, alignItems: 'center' },
+  boardActionsRow: { gap: 10, marginTop: 16 },
+  postBtn: { borderRadius: 14, backgroundColor: '#161616', paddingVertical: 15, alignItems: 'center' },
+  postBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  arrangeBoardBtn: { borderRadius: 14, backgroundColor: '#161616', paddingVertical: 15, alignItems: 'center' },
   arrangeBoardText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   doneText: { color: C.accent, fontSize: 16, fontWeight: '600' },
 
