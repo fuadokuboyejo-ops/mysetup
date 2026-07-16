@@ -2,10 +2,13 @@ import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Platform, TextInput,
-  KeyboardAvoidingView, ScrollView,
+  KeyboardAvoidingView, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { signUp, signIn } from '../config/auth';
+import { signInWithGoogle } from '../config/googleAuth';
+import { GoogleLogo, AppleLogo } from '../components/SocialIcons';
 
 const PEEKING_BOT = require('../assets/peeking_bot.png');
 
@@ -28,8 +31,46 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [mode, setMode] = useState('signup'); // 'signup' | 'signin'
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const canSubmit = email.length > 0 && password.length >= 8;
+  const isSignIn = mode === 'signin';
+  const canSubmit = email.length > 0 && password.length >= 8 && !loading;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setLoading(true);
+    setError(null);
+    const fn = isSignIn ? signIn : signUp;
+    const { user, error: err } = await fn(email, password);
+    setLoading(false);
+    if (err) {
+      // Surface Supabase's message (bad password, already registered, email
+      // confirmation required, etc.) rather than dead-ending onboarding.
+      setError(err);
+      return;
+    }
+    onContinue({ email, user });
+  };
+
+  // Native Google Sign-In. Requires a development build (does not work in Expo
+  // Go) and the two client IDs in .env. See app/config/googleAuth.js.
+  const handleGoogle = async () => {
+    setLoading(true);
+    setError(null);
+    const { user, error: err, cancelled } = await signInWithGoogle();
+    setLoading(false);
+    if (cancelled) return;
+    if (err) { setError(err); return; }
+    onContinue({ user });
+  };
+
+  // Apple isn't wired yet (needs a paid Apple Developer account + provider
+  // config). Kept stubbed so the button stays in the UI.
+  const handleApple = () => {
+    setError('Apple sign-in isn’t set up yet — coming soon.');
+  };
 
   return (
     <View style={styles.container}>
@@ -66,9 +107,13 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
               />
             </View>
 
-            <Text style={styles.title}>Claim your space.</Text>
+            <Text style={styles.title}>
+              {isSignIn ? 'Welcome back.' : 'Claim your space.'}
+            </Text>
             <Text style={styles.subtitle}>
-              create an account to save your setup and browse others.
+              {isSignIn
+                ? 'sign in to load your saved setups.'
+                : 'create an account to save your setup and browse others.'}
             </Text>
 
             <View style={styles.inputBox}>
@@ -109,21 +154,56 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
               </View>
             </View>
 
+            {error && <Text style={styles.error}>{error}</Text>}
+
             <TouchableOpacity
               style={[styles.cta, !canSubmit && styles.ctaDisabled]}
-              onPress={() => canSubmit && onContinue({ email, password })}
+              onPress={handleSubmit}
               activeOpacity={canSubmit ? 0.85 : 1}
             >
-              <Text style={[styles.ctaText, !canSubmit && styles.ctaTextDisabled]}>
-                Create account
-              </Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={[styles.ctaText, !canSubmit && styles.ctaTextDisabled]}>
+                  {isSignIn ? 'Sign in' : 'Create account'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.appleBtn}
+              onPress={handleApple}
+              activeOpacity={0.85}
+            >
+              <AppleLogo size={18} color="#FFFFFF" />
+              <Text style={styles.appleText}>Continue with Apple</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.googleBtn}
+              onPress={handleGoogle}
+              activeOpacity={0.85}
+            >
+              <GoogleLogo size={18} />
+              <Text style={styles.googleText}>Continue with Google</Text>
             </TouchableOpacity>
           </ScrollView>
 
           <View style={styles.signinRow}>
-            <Text style={styles.signinText}>already have an account? </Text>
-            <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-              <Text style={styles.signinLink}>sign in</Text>
+            <Text style={styles.signinText}>
+              {isSignIn ? "don't have an account? " : 'already have an account? '}
+            </Text>
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              onPress={() => { setMode(isSignIn ? 'signup' : 'signin'); setError(null); }}
+            >
+              <Text style={styles.signinLink}>{isSignIn ? 'create one' : 'sign in'}</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity
@@ -205,12 +285,36 @@ const styles = StyleSheet.create({
   passwordInput: { flex: 1 },
   showBtn: { color: C.purple, fontSize: 14, fontWeight: '600', marginLeft: 12 },
 
+  error: { color: '#D64545', fontSize: 13, marginTop: 16, lineHeight: 18 },
+
   cta: {
     marginTop: 24, backgroundColor: C.ink,
     borderRadius: 26, paddingVertical: 17, alignItems: 'center',
   },
   ctaDisabled: { backgroundColor: '#E0E0E0' },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  divider: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: 22, marginBottom: 18,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#EAEAEA' },
+  dividerText: { color: C.placeholder, fontSize: 13, marginHorizontal: 12 },
+
+  appleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#000000', borderRadius: 26,
+    paddingVertical: 16, gap: 10,
+  },
+  appleText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+
+  googleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 26,
+    borderWidth: 1, borderColor: '#E0E0E0',
+    paddingVertical: 16, gap: 10, marginTop: 12,
+  },
+  googleText: { color: C.ink, fontSize: 16, fontWeight: '600' },
   ctaTextDisabled: { color: '#AAAAAA' },
 
   signinRow: {

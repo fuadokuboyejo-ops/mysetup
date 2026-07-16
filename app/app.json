@@ -3,6 +3,7 @@
     "name": "mysetup",
     "slug": "mysetup",
     "version": "1.0.0",
+    "scheme": "mysetup",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -43,7 +44,14 @@
       ],
       "expo-video",
       "expo-image",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.267782263359-cjhr55m9aq1lvt91l9gnb98ieov4qeg4"
+        }
+      ],
+      "expo-web-browser"
     ]
   }
 }
