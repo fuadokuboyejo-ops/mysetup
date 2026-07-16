@@ -1,30 +1,118 @@
 import { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, SafeAreaView,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, SafeAreaView, Modal,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import SetupPostScreen from './SetupPostScreen';
+import CreatorProfileScreen from './CreatorProfileScreen';
 
+// `gradient` stands in for each user's real setup photo until posts carry an
+// actual photo_path — same warm dusk-toned look as the reference mockup.
+// The extra fields (handle, tags, setupsCount, followers, dots) back the
+// post-detail view opened when a card is tapped.
 const MOCK_SETUPS = [
   {
-    id: '1', username: 'jordan', initials: 'JR',
+    id: '1', username: 'jordan', handle: '@jordan_r', initials: 'JR',
+    title: "jordan's battlestation", tags: ['battlestation', 'minimal', 'mech'],
     description: 'walnut · minimal', likes: 412, comments: 38, trending: true,
+    items: 6, setupsCount: 3, followers: '1.2k',
+    gradient: ['#4A4368', '#8B5A56', '#C08552'],
+    dots: [{ x: 52, y: 42 }, { x: 44, y: 62 }, { x: 68, y: 65 }, { x: 28, y: 72 }],
     slots: { monitor: true, keyboard: true, mouse: false, tower: true },
+    extras: [
+      { icon: '🎧', label: 'Headset' },
+      { icon: '🔊', label: 'Speakers' },
+      { icon: '🖱️', label: 'Mousepad' },
+    ],
   },
   {
-    id: '2', username: 'sookie', initials: 'SK',
+    id: '2', username: 'sookie', handle: '@sookie', initials: 'SK',
+    title: "sookie's white setup", tags: ['white', 'gaming'],
     description: 'white · gaming', likes: 287, comments: 21, trending: false,
+    items: 5, setupsCount: 1, followers: '640',
+    gradient: ['#2E4B5E', '#4E7A8C', '#8FBFC7'],
+    dots: [{ x: 50, y: 38 }, { x: 40, y: 68 }, { x: 62, y: 70 }],
     slots: { monitor: true, keyboard: true, mouse: true, tower: false },
+    extras: [
+      { icon: '🎙️', label: 'Mic' },
+      { icon: '💡', label: 'Desk lamp' },
+    ],
   },
   {
-    id: '3', username: 'marcus', initials: 'MC',
+    id: '3', username: 'marcus', handle: '@marcus.codes', initials: 'MC',
+    title: "marcus's productivity rig", tags: ['black', 'productivity', 'minimal'],
     description: 'black · productivity', likes: 534, comments: 61, trending: true,
+    items: 7, setupsCount: 2, followers: '2.4k',
+    gradient: ['#3A2E4B', '#6B4066', '#A85C6B'],
+    dots: [{ x: 46, y: 40 }, { x: 36, y: 66 }, { x: 58, y: 68 }, { x: 70, y: 45 }],
     slots: { monitor: true, keyboard: false, mouse: true, tower: true },
+    extras: [
+      { icon: '🎧', label: 'Headset' },
+      { icon: '🎙️', label: 'Mic' },
+      { icon: '🔌', label: 'Dock' },
+      { icon: '💡', label: 'Desk lamp' },
+    ],
   },
   {
-    id: '4', username: 'priya', initials: 'PR',
+    id: '4', username: 'priya', handle: '@priya.setups', initials: 'PR',
+    title: "priya's cozy corner", tags: ['pastel', 'cozy'],
     description: 'pastel · cozy', likes: 198, comments: 14, trending: false,
+    items: 4, setupsCount: 1, followers: '310',
+    gradient: ['#5B4B5E', '#9B6B72', '#D9A26B'],
+    dots: [{ x: 48, y: 45 }, { x: 55, y: 70 }],
     slots: { monitor: false, keyboard: true, mouse: true, tower: false },
+    extras: [
+      { icon: '🪴', label: 'Plant' },
+      { icon: '💡', label: 'Desk lamp' },
+    ],
   },
 ];
+
+// Public creator-profile data, keyed by username — opened by tapping a
+// creator's avatar/handle from their post. `isPrivate` decides whether the
+// viewer (not yet following) sees the setup grid or a locked placeholder.
+const MOCK_CREATORS = {
+  jordan: {
+    username: 'jordan', initials: 'JR', isPrivate: false,
+    setupsCount: 3, followers: '1.2k', following: 189,
+    bioTitle: "jordan · battlestation builder",
+    bioSubtitle: 'walnut + warm light · always tweaking. mech keebs & ultrawides.',
+    setups: [
+      { id: '1', name: 'main rig', likes: 412, gradient: ['#4A4368', '#8B5A56', '#C08552'] },
+      { id: '1b', name: 'work corner', likes: 88, gradient: ['#3E5240', '#6B7A4E', '#8C935A'] },
+      { id: '1c', name: 'old setup', likes: 203, gradient: ['#3A4152', '#4E5D6E', '#5E6B72'] },
+    ],
+  },
+  sookie: {
+    username: 'sookie', initials: 'SK', isPrivate: true,
+    setupsCount: 2, followers: '540', following: 97,
+    bioTitle: 'sookie',
+    bioSubtitle: 'white & rgb · gaming setups',
+    setups: [
+      { id: '2', name: 'white setup', likes: 287, gradient: ['#2E4B5E', '#4E7A8C', '#8FBFC7'] },
+    ],
+  },
+  marcus: {
+    username: 'marcus', initials: 'MC', isPrivate: false,
+    setupsCount: 2, followers: '2.4k', following: 240,
+    bioTitle: 'marcus · productivity nerd',
+    bioSubtitle: 'black and minimal · optimized for deep work.',
+    setups: [
+      { id: '3', name: 'productivity rig', likes: 534, gradient: ['#3A2E4B', '#6B4066', '#A85C6B'] },
+      { id: '3b', name: 'home office', likes: 121, gradient: ['#2E3A4B', '#4E637A', '#7A93A8'] },
+    ],
+  },
+  priya: {
+    username: 'priya', initials: 'PR', isPrivate: false,
+    setupsCount: 1, followers: '310', following: 158,
+    bioTitle: 'priya · cozy corner curator',
+    bioSubtitle: 'pastel tones · plants · soft lighting only.',
+    setups: [
+      { id: '4', name: 'cozy corner', likes: 198, gradient: ['#5B4B5E', '#9B6B72', '#D9A26B'] },
+    ],
+  },
+};
 
 const TABS = ['Trending', 'Following', 'New'];
 
@@ -36,7 +124,7 @@ function Avatar({ initials }) {
   );
 }
 
-function MiniBoard({ slots }) {
+export function MiniBoard({ slots }) {
   const SlotBox = ({ wide, tall, filled }) => (
     <View style={[
       styles.miniSlot,
@@ -58,30 +146,35 @@ function MiniBoard({ slots }) {
         <SlotBox tall filled={slots.mouse} />
         <SlotBox filled={slots.tower} />
       </View>
-      <View style={styles.tapBadge}>
-        <Text style={styles.tapBadgeText}>tap to explore</Text>
-      </View>
     </View>
   );
 }
 
 function SetupCard({ setup, onPress }) {
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
       {/* User row */}
       <View style={styles.cardHeader}>
         <Avatar initials={setup.initials} />
-        <View style={styles.cardUserInfo}>
-          <Text style={styles.cardUsername}>{setup.username}</Text>
-          <Text style={styles.cardDescription}>{setup.description}</Text>
-        </View>
-        <TouchableOpacity style={styles.followBtn} activeOpacity={0.75}>
-          <Text style={styles.followBtnText}>Follow</Text>
-        </TouchableOpacity>
+        <Text style={styles.cardUsername}>{setup.username}</Text>
       </View>
 
-      {/* Board preview */}
-      <MiniBoard slots={setup.slots} />
+      {/* Real photo — the beauty shot */}
+      <View style={styles.photoWrap}>
+        <LinearGradient colors={setup.gradient} style={StyleSheet.absoluteFill} />
+        <View style={styles.photoCaption}>
+          <Text style={styles.photoCaptionText}>real photo · the beauty shot</Text>
+        </View>
+      </View>
+
+      {/* Interactive board — explore the gear */}
+      <View style={styles.boardPanel}>
+        <Text style={styles.boardPanelLabel}>interactive board</Text>
+        <MiniBoard slots={setup.slots} />
+        <View style={styles.tapBadge}>
+          <Text style={styles.tapBadgeText}>tap to explore</Text>
+        </View>
+      </View>
 
       {/* Stats row */}
       <View style={styles.cardFooter}>
@@ -106,8 +199,34 @@ function SetupCard({ setup, onPress }) {
   );
 }
 
+// Grid tiles on a creator profile only carry {id, name, likes, gradient}. If
+// the tapped tile matches a real feed post, reuse that full post object;
+// otherwise fill in reasonable defaults so SetupPostScreen has what it needs.
+function postFromCreatorSetup(creator, setupEntry) {
+  const existing = MOCK_SETUPS.find(s => s.id === setupEntry.id);
+  if (existing) return existing;
+  return {
+    id: setupEntry.id,
+    username: creator.username,
+    handle: `@${creator.username}`,
+    initials: creator.initials,
+    title: setupEntry.name,
+    tags: [],
+    likes: setupEntry.likes,
+    items: 0,
+    setupsCount: creator.setupsCount,
+    followers: creator.followers,
+    gradient: setupEntry.gradient,
+    dots: [],
+    slots: { monitor: false, keyboard: false, mouse: false, tower: false },
+    extras: [],
+  };
+}
+
 export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
   const [activeTab, setActiveTab] = useState('Trending');
+  const [openedPost, setOpenedPost] = useState(null);
+  const [viewedCreator, setViewedCreator] = useState(null);
 
   return (
     <View style={styles.container}>
@@ -149,11 +268,40 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
           showsVerticalScrollIndicator={false}
         >
           {MOCK_SETUPS.map(setup => (
-            <SetupCard key={setup.id} setup={setup} onPress={onViewSetup} />
+            <SetupCard key={setup.id} setup={setup} onPress={() => setOpenedPost(setup)} />
           ))}
         </ScrollView>
 
       </SafeAreaView>
+
+      {/* Post view + creator profile share ONE Modal and swap content — RN's
+          Modal is a single native presentation, so two sibling Modals both
+          visible at once (post open underneath, creator opened on top of it)
+          don't stack reliably; the second one fails to present correctly. */}
+      <Modal
+        visible={!!openedPost || !!viewedCreator}
+        animationType="slide"
+        onRequestClose={() => (viewedCreator ? setViewedCreator(null) : setOpenedPost(null))}
+      >
+        <SafeAreaProvider>
+          {viewedCreator ? (
+            <CreatorProfileScreen
+              creator={viewedCreator}
+              onBack={() => setViewedCreator(null)}
+              onOpenSetup={(setupEntry) => {
+                setViewedCreator(null);
+                setOpenedPost(postFromCreatorSetup(viewedCreator, setupEntry));
+              }}
+            />
+          ) : openedPost ? (
+            <SetupPostScreen
+              post={openedPost}
+              onBack={() => setOpenedPost(null)}
+              onOpenCreator={() => setViewedCreator(MOCK_CREATORS[openedPost.username])}
+            />
+          ) : null}
+        </SafeAreaProvider>
+      </Modal>
 
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
@@ -191,6 +339,7 @@ const C = {
   sub:    '#8A8792',
   accent: '#161616',
 };
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
@@ -241,29 +390,52 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   avatar: {
-    width: 38, height: 38, borderRadius: 19,
+    width: 34, height: 34, borderRadius: 17,
     backgroundColor: '#2a4a7a',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  cardUserInfo: { flex: 1 },
-  cardUsername: { color: C.text, fontSize: 15, fontWeight: '600' },
-  cardDescription: { color: C.sub, fontSize: 12, marginTop: 1 },
-  followBtn: {
-    borderWidth: 1, borderColor: C.border,
-    borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14,
-  },
-  followBtnText: { color: C.text, fontSize: 13, fontWeight: '500' },
+  avatarText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  cardUsername: { color: C.text, fontSize: 17, fontWeight: '700' },
 
-  // Mini board
-  miniBoard: {
+  // Real photo hero — the beauty shot. Caption text stays white regardless of
+  // app theme since it's overlaid directly on the photo, not the card.
+  photoWrap: {
+    marginHorizontal: 14,
+    marginBottom: 12,
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  photoCaption: { padding: 14 },
+  photoCaptionText: {
+    color: '#FFFFFF', fontSize: 13, fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+
+  // Interactive board panel
+  boardPanel: {
     marginHorizontal: 14,
     marginBottom: 8,
     backgroundColor: '#F0EFEA',
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 10,
+    padding: 14,
+    gap: 12,
+    position: 'relative',
+  },
+  boardPanelLabel: { color: C.sub, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  tapBadge: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: C.accent,
+    borderRadius: 12,
+    paddingVertical: 5, paddingHorizontal: 10,
+  },
+  tapBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
+
+  // Mini board
+  miniBoard: {
     gap: 8,
     position: 'relative',
   },
@@ -279,14 +451,7 @@ const styles = StyleSheet.create({
   },
   miniSlotWide: { width: '60%', flex: 0 },
   miniSlotTall: { height: 52 },
-  miniSlotFilled: { backgroundColor: C.filled },
-  tapBadge: {
-    position: 'absolute', bottom: 14, right: 14,
-    backgroundColor: C.accent,
-    borderRadius: 12,
-    paddingVertical: 5, paddingHorizontal: 10,
-  },
-  tapBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
+  miniSlotFilled: { backgroundColor: C.filled, borderStyle: 'solid', borderColor: C.border },
 
   cardFooter: {
     flexDirection: 'row',
