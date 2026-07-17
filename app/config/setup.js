@@ -1,5 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// The kinds of setup a user can create. Shared by the Profile "New Setup" modal
+// and the AI Revamp "Design from scratch" type picker so both stay in sync.
+export const SETUP_TYPES = [
+  { key: 'pc',      label: 'PC / Console',  symbol: '⬡' },
+  { key: 'server',  label: 'Server Setup',  symbol: '⬡' },
+  { key: 'laptop',  label: 'Laptop Setup',  symbol: '⬡' },
+];
+
+// Types that open straight into the board builder (so the layout can be edited
+// before anything else).
+export const BUILDABLE_TYPES = ['pc', 'server', 'laptop'];
+
 const SETUPS_KEY = 'mysetup_setups';
 const ITEMS_KEY = 'mysetup_items_v2';   // universal item library — shared by every setup
 const LEGACY_KEY = 'mysetup_items';

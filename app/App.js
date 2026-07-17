@@ -134,10 +134,10 @@ export default function App() {
     setScreen('board-builder');
   };
 
-  const designFromScratch = async () => {
+  const designFromScratch = async (type = 'pc') => {
     setRevampBasePhoto(null);
     setRevampAutoGenerate(false);
-    const setup = await createSetup('My Setup', 'pc');
+    const setup = await createSetup('My Setup', type);
     setActiveSetup(setup);
     setAfterBoardBuilder('revamp');
     setScreen('board-builder');

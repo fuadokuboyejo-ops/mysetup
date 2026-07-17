@@ -1,8 +1,8 @@
-// iOS Simulator shares the Mac's network, so 'localhost' reaches the local
-// backend and — unlike a hardcoded LAN IP — survives DHCP address changes.
-// Testing on a PHYSICAL device instead? Set this to your Mac's LAN IP
-// (find it with: ipconfig getifaddr en0 — currently 10.1.194.248).
-const LOCAL_IP = 'localhost';
+// A PHYSICAL device can't reach the dev machine via 'localhost' (that resolves
+// to the phone itself), so this must be the PC's LAN IP. Find it on Windows with
+// `ipconfig` (IPv4 Address). If your DHCP lease changes this, update it here.
+// (iOS Simulator / Android emulator can use 'localhost' / '10.0.2.2' instead.)
+const LOCAL_IP = '192.168.68.51';
 const PORT = 3001;
 
 export const API_BASE = `http://${LOCAL_IP}:${PORT}`;

@@ -3,7 +3,7 @@ import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, Alert, TextInput, Modal, ActivityIndicator, StatusBar,
 } from 'react-native';
-import { getSetups, createSetup, deleteSetup, getAllItems } from '../config/setup';
+import { getSetups, createSetup, deleteSetup, getAllItems, SETUP_TYPES, BUILDABLE_TYPES } from '../config/setup';
 import { computeLayout, normalizeNodes, nodeSpan } from '../config/boardLayout';
 import StitchBorder from '../components/StitchBorder';
 
@@ -69,12 +69,6 @@ function BoardPreview({ setup, items }) {
   );
 }
 
-const SETUP_TYPES = [
-  { key: 'pc',      label: 'PC / Console',  symbol: '⬡' },
-  { key: 'server',  label: 'Server Setup',  symbol: '⬡' },
-  { key: 'laptop',  label: 'Laptop Setup',  symbol: '⬡' },
-];
-
 export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSetupDeleted }) {
   const [setups, setSetups] = useState([]);
   const [allItems, setAllItems] = useState([]);
@@ -110,8 +104,7 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
     setCreating(false);
     await load();
     // These types start in the board builder so users can edit the layout first.
-    const BUILDABLE = ['pc', 'server', 'laptop'];
-    if (BUILDABLE.includes(newType) && onBuildSetup) onBuildSetup(setup);
+    if (BUILDABLE_TYPES.includes(newType) && onBuildSetup) onBuildSetup(setup);
     else onOpenSetup(setup);
   };
 

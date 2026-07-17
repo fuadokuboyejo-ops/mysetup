@@ -9,6 +9,9 @@ export const PRODUCT_GUIDES = {
   monitor:    { label: 'Monitor',   tip: 'shoot straight-on, screen off',        outline: 'landscape', guide: 'Straight-on, screen off, fill the frame. Avoids glare & keystone.' },
   keyboard:   { label: 'Keyboard',  tip: 'top-down, slight tilt to show keys',   outline: 'landscape', guide: 'Top-down, slight tilt to show keys, on a plain surface.' },
   pc_tower:   { label: 'PC Tower',  tip: 'front 3/4 angle to show side panel',   outline: 'portrait',  guide: 'Front 3/4 angle to show the side panel & RGB.' },
+  server:     { label: 'Server',    tip: 'front 3/4 angle to show drive bays',   outline: 'landscape', guide: 'Front 3/4 angle to show the drive bays & ports. Even, glare-free light.' },
+  laptop:     { label: 'Laptop',    tip: 'open ~120°, front 3/4 angle',          outline: 'landscape', guide: 'Open the lid ~120° and shoot from a front 3/4 angle so the screen & keyboard both show.' },
+  console:    { label: 'Console',   tip: 'front 3/4 angle, plain surface',       outline: 'landscape', guide: 'Front 3/4 angle on a plain surface so the shape & front ports read clearly.' },
   deskmat:    { label: 'Desk Mat',  tip: 'top-down, show the full mat',           outline: 'landscape', guide: 'Top-down shot, show the full mat on a plain desk.' },
   other:      { label: 'Other',     tip: 'center the item, good lighting',        outline: 'square',    guide: 'Center the item against a plain background with good lighting.' },
 };
@@ -18,6 +21,9 @@ const PRODUCT_IMAGES = {
   monitor: require('../assets/monitor_pic.png'),
   keyboard: require('../assets/keyboard_pic.png'),
   pc_tower: require('../assets/pc_pic.png'),
+  server: require('../assets/server.png'),
+  laptop: require('../assets/laptop.png'),
+  console: require('../assets/consle.png'),
   deskmat: require('../assets/mousepad_pic.png'),
   other: require('../assets/other_pic.png'),
 };

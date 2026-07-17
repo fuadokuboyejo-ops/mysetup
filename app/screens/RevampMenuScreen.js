@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Image,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
-import { getGenerationsUsed, getGenerationHistory, getSetups, GENERATIONS_LIMIT } from '../config/setup';
+import { getGenerationsUsed, getGenerationHistory, getSetups, GENERATIONS_LIMIT, SETUP_TYPES } from '../config/setup';
 
 const RING_SIZE = 60;
 const RING_STROKE = 6;
@@ -121,6 +121,10 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
   // (the three source options) → 'setups' (pick one of your saved setups).
   const [gearMode, setGearMode] = useState(null);
   const [photoSetups, setPhotoSetups] = useState([]);
+  // "Design from scratch" first asks what kind of setup to build, mirroring the
+  // Profile "New Setup" flow. null = closed; otherwise the selected type key.
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [scratchType, setScratchType] = useState('');
   const [historyWidth, setHistoryWidth] = useState(0);
   const statTranslate = useRef(new Animated.Value(500)).current;
   const statOpacity = useRef(new Animated.Value(0)).current;
@@ -183,8 +187,16 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
     }
   };
 
+  const openTypePicker = () => { setScratchType(''); setTypePickerOpen(true); };
+
+  const confirmScratchType = () => {
+    if (!scratchType) return;
+    setTypePickerOpen(false);
+    onDesignFromScratch(scratchType);
+  };
+
   const handlers = {
-    scratch: onDesignFromScratch,
+    scratch: openTypePicker,
     'different-gear': openGearSheet,
     'existing-setup': onExistingSetup,
   };
@@ -276,6 +288,42 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* "Design from scratch" — pick the kind of setup before building */}
+      <Modal visible={typePickerOpen} transparent animationType="fade" onRequestClose={() => setTypePickerOpen(false)}>
+        <View style={styles.typeOverlay}>
+          <View style={styles.typeCard}>
+            <Text style={styles.typeTitle}>What kind of setup?</Text>
+            <Text style={styles.typeSub}>Choose what you want to design.</Text>
+            <View style={styles.typeGrid}>
+              {SETUP_TYPES.map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.typeBtn, scratchType === t.key && styles.typeBtnActive]}
+                  onPress={() => setScratchType(t.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.typeBtnText, scratchType === t.key && styles.typeBtnTextActive]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.typeBtns}>
+              <TouchableOpacity style={styles.typeCancelBtn} onPress={() => setTypePickerOpen(false)}>
+                <Text style={styles.typeCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.typeConfirmBtn, !scratchType && styles.typeConfirmBtnDisabled]}
+                onPress={confirmScratchType}
+                disabled={!scratchType}
+              >
+                <Text style={styles.typeConfirmText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Grid of every past AI generation */}
       <Modal visible={galleryOpen} transparent animationType="slide" onRequestClose={() => setGalleryOpen(false)}>
@@ -375,6 +423,23 @@ const C = { bg: '#FAFAF8', card: '#FFFFFF', border: '#E0E0E0', text: '#161616', 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+
+  // "Design from scratch" type picker
+  typeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  typeCard: { backgroundColor: C.card, borderRadius: 20, padding: 24, width: '100%', gap: 16, borderWidth: 1, borderColor: C.border },
+  typeTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  typeSub: { color: C.sub, fontSize: 14, marginTop: -10 },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  typeBtn: { width: '47%', paddingVertical: 18, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' },
+  typeBtnActive: { borderColor: C.purple, backgroundColor: C.purpleTint },
+  typeBtnText: { color: C.sub, fontSize: 14, fontWeight: '600' },
+  typeBtnTextActive: { color: C.purple },
+  typeBtns: { flexDirection: 'row', gap: 10 },
+  typeCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+  typeCancelText: { color: C.sub, fontSize: 15, fontWeight: '700' },
+  typeConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: C.text, alignItems: 'center' },
+  typeConfirmBtnDisabled: { backgroundColor: '#D8D8D8' },
+  typeConfirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   safe: { flex: 1 },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },

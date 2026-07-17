@@ -12,6 +12,9 @@ const CATEGORY_IMAGES = {
   monitor: require('../assets/monitor_pic.png'),
   keyboard: require('../assets/keyboard_pic.png'),
   pc_tower: require('../assets/pc_pic.png'),
+  server: require('../assets/server.png'),
+  laptop: require('../assets/laptop.png'),
+  console: require('../assets/consle.png'),
   deskmat: require('../assets/mousepad_pic.png'),
   other: require('../assets/other_pic.png'),
 };
@@ -115,6 +118,59 @@ const CATEGORY_CONFIG = {
       pc_specs: {
         cpu: clean(values.cpu), gpu: clean(values.gpu), psu: clean(values.psu),
         motherboard: clean(values.motherboard), case: clean(values.case), rgb: clean(values.rgb),
+      },
+    }),
+  },
+  server: {
+    label: 'SERVER',
+    nameKey: 'model',
+    fields: [
+      { key: 'brand', label: 'BRAND', placeholder: 'Dell, Synology, Supermicro…', chips: ['Dell', 'HPE', 'Supermicro', 'Synology', 'Custom'] },
+      { key: 'model', label: 'MODEL', placeholder: 'PowerEdge R730, DS1821+…', required: true },
+      { key: 'form_factor', label: 'FORM FACTOR', optional: true, placeholder: '2U', chips: ['1U', '2U', '4U', 'Tower', 'Mini'] },
+      { key: 'role', label: 'ROLE', optional: true, placeholder: 'NAS', chips: ['NAS', 'Homelab', 'Media', 'Virtualization', 'Backup'] },
+      { key: 'cpu', label: 'CPU', optional: true, placeholder: 'Xeon E5-2690 v4' },
+      { key: 'ram', label: 'RAM', optional: true, placeholder: '64', suffix: 'GB', keyboardType: 'numbers-and-punctuation', chips: ['16', '32', '64', '128', '256'], chipSuffix: 'GB' },
+      { key: 'storage', label: 'STORAGE', optional: true, placeholder: '8 × 4TB' },
+      { key: 'os', label: 'OS / PLATFORM', optional: true, placeholder: 'TrueNAS', chips: ['TrueNAS', 'Unraid', 'Proxmox', 'ESXi', 'Windows'] },
+    ],
+    barcode: values => `${values.form_factor || '--'} · ${values.role || values.os || '--'}`,
+    buildProduct: values => ({
+      ...baseProduct(values.model, values.brand, 'server'),
+      server_specs: {
+        brand: clean(values.brand), model: clean(values.model), form_factor: clean(values.form_factor),
+        role: clean(values.role), cpu: clean(values.cpu), ram: clean(values.ram),
+        storage: clean(values.storage), os: clean(values.os),
+      },
+    }),
+  },
+  laptop: {
+    label: 'LAPTOP',
+    nameKey: 'model',
+    fields: [
+      { key: 'brand', label: 'BRAND', placeholder: 'Apple, ASUS, Lenovo…', chips: ['Apple', 'ASUS', 'Lenovo', 'Dell', 'HP', 'Razer'] },
+      { key: 'model', label: 'NAME / MODEL', placeholder: 'MacBook Pro 14, ROG Zephyrus…', required: true },
+    ],
+    barcode: values => `${clean(values.brand) || '--'} · ${shorten(values.model)}`,
+    buildProduct: values => ({
+      ...baseProduct(values.model, values.brand, 'laptop'),
+      laptop_specs: {
+        brand: clean(values.brand), model: clean(values.model),
+      },
+    }),
+  },
+  console: {
+    label: 'CONSOLE',
+    nameKey: 'model',
+    fields: [
+      { key: 'brand', label: 'BRAND', placeholder: 'Sony, Microsoft, Nintendo…', chips: ['Sony', 'Microsoft', 'Nintendo', 'Valve', 'Sega'] },
+      { key: 'model', label: 'NAME / MODEL', placeholder: 'PS5, Xbox Series X, Switch OLED…', required: true },
+    ],
+    barcode: values => `${clean(values.brand) || '--'} · ${shorten(values.model)}`,
+    buildProduct: values => ({
+      ...baseProduct(values.model, values.brand, 'console'),
+      console_specs: {
+        brand: clean(values.brand), model: clean(values.model),
       },
     }),
   },
