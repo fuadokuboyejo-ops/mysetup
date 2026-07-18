@@ -65,6 +65,9 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
   const [tagDraft, setTagDraft] = useState('');
   // The photo tag whose product card is currently open (tap a dot to toggle).
   const [selectedDotId, setSelectedDotId] = useState(null);
+  // Natural aspect ratio of the photo — render at this with 'contain' so the
+  // whole image shows and tags land exactly where they were placed.
+  const [photoAspect, setPhotoAspect] = useState(null);
 
   const dotCount = setup?.dots?.length || 0;
   const selectedDot = (setup?.dots || []).find(d => d.id === selectedDotId) || null;
@@ -105,9 +108,17 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
           </View>
 
           <View style={styles.previewCard}>
-            <View style={styles.photoWrap}>
+            <View style={[styles.photoWrap, photoAspect ? { aspectRatio: photoAspect } : null]}>
               {setup?.photo ? (
-                <Image source={{ uri: `data:image/jpeg;base64,${setup.photo}` }} style={styles.photoImg} contentFit="cover" />
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${setup.photo}` }}
+                  style={styles.photoImg}
+                  contentFit="contain"
+                  onLoad={(e) => {
+                    const s = e?.source;
+                    if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
+                  }}
+                />
               ) : (
                 <LinearGradient colors={['#3A4152', '#4E5D6E', '#5E6B72']} style={styles.photoImg} />
               )}

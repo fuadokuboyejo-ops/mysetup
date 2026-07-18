@@ -21,6 +21,29 @@ Planned features and improvements for mysetup.
 
 ---
 
+## Price Finding with AI
+
+- **AI price lookup** — when an item is scanned or added, AI finds its current price across retailers (Amazon, Best Buy, Newegg, etc.) from the product name, brand, and category
+- **Price on the item card** — show the found price on the gear receipt and the tag/product card, with the source retailer
+- **Total setup cost** — sum every item's price to show what a whole setup costs to build
+- **Price range & deals** — surface the lowest current price and flag notable discounts
+- **Refresh & history** — re-check prices on demand and keep a simple price history per item
+- Pairs with affiliate links — the found retailer can become the buy link
+
+---
+
+## Item Catalog
+
+- **Global product catalog** — a shared, browsable library of gear (mice, keyboards, monitors, servers, laptops, consoles, etc.) so users can add items without scanning
+- **Search & filter** — find products by name, brand, category, or spec (e.g. 75% keyboards, 240Hz monitors)
+- **Add from catalog** — pick a product to drop straight onto the board and into your library, pre-filled with specs and photo
+- **Auto-fill on scan** — when a scan matches a catalog entry, prefill the gear receipt (brand, model, specs, cutout photo)
+- **Community-built** — items scanned by users feed back into the catalog, growing it over time (deduped, moderated)
+- **Canonical specs & images** — one clean record per product with a standard cutout, so boards look consistent
+- Ties into Price Finding and Affiliate Links — catalog entries carry pricing and buy links
+
+---
+
 ## Widgets
 
 - Home screen widgets — glanceable summaries of your setup (item count, latest scan, setup photo)
