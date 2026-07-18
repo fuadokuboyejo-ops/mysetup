@@ -265,6 +265,9 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
         return {
           ...p,
           photo: setup?.photo,
+          // Live tags from the setup (not the post-time snapshot) so re-tagging
+          // the setup updates the post too, and both views stay in sync.
+          dots: setup?.dots ?? p.dots,
           // The real arranged board + the gear library, so the feed card can
           // render the actual board the user posted (not the placeholder grid).
           boardSetup: setup,
