@@ -26,9 +26,6 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
   // ONLY that tag (highlighted) and the item is shown under the board instead of
   // a floating card.
   const [boardSel, setBoardSel] = useState(null);
-  // Natural aspect ratio of the photo — render at this with 'contain' so tag
-  // %-positions land exactly where they do in the Setup photo view.
-  const [photoAspect, setPhotoAspect] = useState(null);
   const selectedItem = selectedDot
     ? (post.boardItems || []).find(i => i.id === selectedDot.libraryItemId)
     : null;
@@ -92,18 +89,14 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
             </View>
           </Animated.View>
 
-          {/* Hero photo with tagged dots — natural aspect + 'contain' so the
-              whole image shows and tags line up with the Setup photo view. */}
-          <Animated.View style={[styles.photoWrap, photoAspect ? { aspectRatio: photoAspect } : null, sectionStyle(2)]}>
+          {/* Hero photo with tagged dots — 4:3 + cover, identical to the post
+              composer preview so the tags land in the exact same spots. */}
+          <Animated.View style={[styles.photoWrap, sectionStyle(2)]}>
             {post.photo ? (
               <Image
                 source={{ uri: `data:image/jpeg;base64,${post.photo}` }}
                 style={StyleSheet.absoluteFill}
-                contentFit="contain"
-                onLoad={(e) => {
-                  const s = e?.source;
-                  if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
-                }}
+                contentFit="cover"
               />
             ) : (
               <LinearGradient colors={post.gradient} style={StyleSheet.absoluteFill} />
