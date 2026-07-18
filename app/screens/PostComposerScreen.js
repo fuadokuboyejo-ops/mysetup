@@ -5,7 +5,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { computeLayout, normalizeNodes, nodeSpan } from '../config/boardLayout';
+import PulsingDot from '../components/PulsingDot';
+import BoardPreview from '../components/BoardPreview';
+import DotCard from '../components/DotCard';
 
 const SUGGESTED_TAGS = ['minimal', 'gaming', 'productivity', 'cozy', 'RGB', 'wood', 'white', 'mechanical'];
 const mono = Platform.select({ ios: 'Courier New', android: 'monospace', default: 'monospace' });
@@ -13,42 +15,6 @@ const BARCODE_BARS = [3, 1, 2, 4, 1, 3, 1, 1, 2, 3, 1, 4, 2, 1, 3, 1, 2, 1, 4, 1
 
 // Read-only board preview for the composer — same geometry as the Board tab
 // and ProfileScreen's card preview, just rendered smaller/non-interactive.
-function BoardPreview({ setup, items }) {
-  const [w, setW] = useState(0);
-  const nodes = normalizeNodes(setup?.boardLayout, setup?.type);
-  const placements = setup?.slots || {};
-  const filled = {};
-  for (const [nodeId, itemId] of Object.entries(placements)) {
-    const it = items?.find(i => i.id === itemId);
-    if (it) filled[nodeId] = it;
-  }
-  const layout = computeLayout(nodes, w);
-
-  return (
-    <View style={[styles.board, { height: layout.height }]} onLayout={e => setW(e.nativeEvent.layout.width)}>
-      {w > 0 && nodes.map(node => {
-        const r = layout.rects[node.id];
-        if (!r) return null;
-        const photo = filled[node.id]?.photoBase64;
-        return (
-          <View
-            key={node.id}
-            style={[styles.slot, { position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h }, photo && styles.slotFilled]}
-          >
-            {photo && (
-              <Image
-                source={{ uri: `data:image/png;base64,${photo}` }}
-                style={styles.slotImage}
-                contentFit="contain"
-              />
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 // Perforated paper edge — same zigzag teeth as the Gear Receipt screen.
 const ZIG_TEETH = Array.from({ length: 20 });
 function Zig({ dir }) {
@@ -97,8 +63,12 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
   const [caption, setCaption] = useState('');
   const [tags, setTags] = useState([]);
   const [tagDraft, setTagDraft] = useState('');
+  // The photo tag whose product card is currently open (tap a dot to toggle).
+  const [selectedDotId, setSelectedDotId] = useState(null);
 
   const dotCount = setup?.dots?.length || 0;
+  const selectedDot = (setup?.dots || []).find(d => d.id === selectedDotId) || null;
+  const selectedItem = selectedDot ? (items || []).find(i => i.id === selectedDot.libraryItemId) : null;
   const suggestions = SUGGESTED_TAGS.filter(t => !tags.includes(t)).slice(0, 4);
   const filledCount = [title, caption, tags.length > 0].filter(Boolean).length;
 
@@ -141,12 +111,34 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
               ) : (
                 <LinearGradient colors={['#3A4152', '#4E5D6E', '#5E6B72']} style={styles.photoImg} />
               )}
+              {/* The gear tags placed on the photo — each dot points at an item
+                  (dot.libraryItemId). Tap one to reveal its product card, same
+                  as the photo section in SetupScreen. */}
+              {(setup?.dots || []).map((d, i) => (
+                <PulsingDot
+                  key={d.id}
+                  x={d.x}
+                  y={d.y}
+                  index={i}
+                  selected={selectedDotId === d.id}
+                  onPress={() => setSelectedDotId(selectedDotId === d.id ? null : d.id)}
+                />
+              ))}
+              <DotCard item={selectedItem} dot={selectedDot} onClose={() => setSelectedDotId(null)} />
               <View style={styles.tagsBadge}>
                 <Text style={styles.tagsBadgeIcon}>◉</Text>
                 <Text style={styles.tagsBadgeText}>{dotCount} tags</Text>
               </View>
             </View>
-            <BoardPreview setup={setup} items={items} />
+            <BoardPreview
+              setup={setup}
+              items={items}
+              onItemPress={item => {
+                // Tapping a board node opens the card at that item's photo tag.
+                const dot = (setup?.dots || []).find(d => d.libraryItemId === item.id);
+                if (dot) setSelectedDotId(dot.id);
+              }}
+            />
           </View>
 
           {/* Receipt — same paper/perforated/barcode treatment as the Gear Receipt screen */}
@@ -274,6 +266,7 @@ const styles = StyleSheet.create({
 
   previewCard: { backgroundColor: '#F4F4F4', borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 10, gap: 10 },
   photoWrap: { borderRadius: 14, overflow: 'hidden', aspectRatio: 4 / 3, position: 'relative' },
+  // Product card anchored near a tapped dot.
   photoImg: { width: '100%', height: '100%' },
   tagsBadge: {
     position: 'absolute', bottom: 12, left: 12,
@@ -284,10 +277,6 @@ const styles = StyleSheet.create({
   tagsBadgeIcon: { color: '#FFFFFF', fontSize: 10 },
   tagsBadgeText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
 
-  board: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 14, position: 'relative' },
-  slot: { backgroundColor: '#F4F4F4', borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  slotFilled: { backgroundColor: '#F4F4F4' },
-  slotImage: { width: '80%', height: '78%' },
 
   // ─── Receipt — matches GearReceiptScreen's paper/perforated/barcode look ───
   receipt: {

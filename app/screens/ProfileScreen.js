@@ -3,7 +3,7 @@ import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, Alert, TextInput, Modal, ActivityIndicator, StatusBar,
 } from 'react-native';
-import { getSetups, createSetup, deleteSetup, getAllItems, SETUP_TYPES, BUILDABLE_TYPES } from '../config/setup';
+import { getSetups, createSetup, deleteSetup, getAllItems, getPosts, deletePostsBySetup, SETUP_TYPES, BUILDABLE_TYPES } from '../config/setup';
 import { computeLayout, normalizeNodes, nodeSpan } from '../config/boardLayout';
 import StitchBorder from '../components/StitchBorder';
 
@@ -78,11 +78,14 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('');
   const [creating, setCreating] = useState(false);
+  // setupIds that currently have a post on the feed — used to warn on delete.
+  const [postedIds, setPostedIds] = useState(new Set());
 
   const load = useCallback(async () => {
-    const [data, items] = await Promise.all([getSetups(), getAllItems()]);
+    const [data, items, posts] = await Promise.all([getSetups(), getAllItems(), getPosts()]);
     setSetups(data);
     setAllItems(items);
+    setPostedIds(new Set(posts.map(p => p.setupId)));
     setLoading(false);
   }, []);
 
@@ -109,13 +112,18 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   };
 
   const handleDelete = (setup) => {
-    Alert.alert('Delete Setup', `Delete "${setup.name}"? This removes the board and photo — your items stay in your library.`, [
+    const isPosted = postedIds.has(setup.id);
+    const message = isPosted
+      ? `Delete "${setup.name}"? It's posted to the feed — deleting it will also remove that post. Your items stay in your library.`
+      : `Delete "${setup.name}"? This removes the board and photo — your items stay in your library.`;
+    Alert.alert('Delete Setup', message, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Delete',
+        text: isPosted ? 'Delete & remove post' : 'Delete',
         style: 'destructive',
         onPress: async () => {
           await deleteSetup(setup.id);
+          await deletePostsBySetup(setup.id);
           onSetupDeleted?.(setup.id);
           load();
         },

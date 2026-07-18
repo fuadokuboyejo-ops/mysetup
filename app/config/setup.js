@@ -199,3 +199,71 @@ export async function addGenerationToHistory(image) {
   await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
   return next;
 }
+
+// ─── Feed posts — setups the user has published to the Home feed ─────────────
+// Posts intentionally do NOT embed the setup photo (that base64 can be hundreds
+// of KB and would blow AsyncStorage's ~2MB row cap after a few posts). Instead
+// each post keeps a `setupId`; the feed hydrates the photo from getSetups() at
+// render time. This maps cleanly onto a future `posts` table + storage URL.
+const POSTS_KEY = 'mysetup_posts';
+const POSTS_LIMIT = 50;
+
+export async function getPosts() {
+  const raw = await AsyncStorage.getItem(POSTS_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function addPost(post) {
+  const posts = await getPosts();
+  const entry = { id: Date.now().toString(), createdAt: new Date().toISOString(), ...post };
+  const next = [entry, ...posts].slice(0, POSTS_LIMIT);
+  await AsyncStorage.setItem(POSTS_KEY, JSON.stringify(next));
+  return entry;
+}
+
+// Removes any feed posts for a setup — used when that setup is deleted so it
+// doesn't linger on the feed.
+export async function deletePostsBySetup(setupId) {
+  const posts = await getPosts();
+  const next = posts.filter(p => p.setupId !== setupId);
+  if (next.length !== posts.length) {
+    await AsyncStorage.setItem(POSTS_KEY, JSON.stringify(next));
+  }
+}
+
+// Shapes a setup + the composer's form data into the post object the Home feed
+// and post-detail screens expect (see MOCK_SETUPS in HomeScreen).
+export function buildPostFromSetup(setup, items, data) {
+  const cats = (items || []).map(i => (i.product?.category || '').toLowerCase());
+  const has = kw => cats.some(c => c.includes(kw));
+  const slots = {
+    monitor:  has('monitor'),
+    keyboard: has('keyboard'),
+    mouse:    has('mouse'),
+    tower:    has('pc') || has('tower') || has('server') || has('console') || has('laptop'),
+  };
+  const tags = data.tags || [];
+  const caption = (data.caption || '').trim();
+  return {
+    setupId: setup?.id,
+    // No account/profile system yet — every post is "you" until auth carries a
+    // real username. Swap these three for the signed-in profile later.
+    username: 'you',
+    handle: '@you',
+    initials: 'ME',
+    title: data.title,
+    caption,
+    description: caption || tags.join(' · '),
+    tags,
+    likes: 0,
+    comments: 0,
+    trending: false,
+    items: (items || []).length,
+    setupsCount: 1,
+    followers: '0',
+    gradient: ['#4A4368', '#8B5A56', '#C08552'],
+    dots: setup?.dots || [],
+    slots,
+    extras: [],
+  };
+}

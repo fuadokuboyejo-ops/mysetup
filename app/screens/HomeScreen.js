@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, SafeAreaView, Modal,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import SetupPostScreen from './SetupPostScreen';
 import CreatorProfileScreen from './CreatorProfileScreen';
+import BoardPreview from '../components/BoardPreview';
+import { getPosts, getSetups, getAllItems } from '../config/setup';
 
 // `gradient` stands in for each user's real setup photo until posts carry an
 // actual photo_path — same warm dusk-toned look as the reference mockup.
@@ -159,18 +162,28 @@ function SetupCard({ setup, onPress }) {
         <Text style={styles.cardUsername}>{setup.username}</Text>
       </View>
 
-      {/* Real photo — the beauty shot */}
+      {/* Real photo — the beauty shot (falls back to a gradient placeholder) */}
       <View style={styles.photoWrap}>
-        <LinearGradient colors={setup.gradient} style={StyleSheet.absoluteFill} />
-        <View style={styles.photoCaption}>
-          <Text style={styles.photoCaptionText}>real photo · the beauty shot</Text>
-        </View>
+        {setup.photo ? (
+          <Image
+            source={{ uri: `data:image/jpeg;base64,${setup.photo}` }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+          />
+        ) : (
+          <LinearGradient colors={setup.gradient} style={StyleSheet.absoluteFill} />
+        )}
       </View>
 
-      {/* Interactive board — explore the gear */}
+      {/* Interactive board — the real arranged board for user posts, or the
+          placeholder mini-board for the mock/sample feed. */}
       <View style={styles.boardPanel}>
         <Text style={styles.boardPanelLabel}>interactive board</Text>
-        <MiniBoard slots={setup.slots} />
+        {setup.boardSetup ? (
+          <BoardPreview setup={setup.boardSetup} items={setup.boardItems} />
+        ) : (
+          <MiniBoard slots={setup.slots} />
+        )}
         <View style={styles.tapBadge}>
           <Text style={styles.tapBadgeText}>tap to explore</Text>
         </View>
@@ -223,10 +236,44 @@ function postFromCreatorSetup(creator, setupEntry) {
   };
 }
 
+// A user's own posts have no MOCK_CREATORS entry, so build a minimal creator
+// object from the post itself for the profile view opened from a feed card.
+function creatorFromPost(post) {
+  return {
+    username: post.username, initials: post.initials, isPrivate: false,
+    setupsCount: post.setupsCount || 1, followers: post.followers || '0', following: 0,
+    bioTitle: post.title, bioSubtitle: post.description || '',
+    setups: [{ id: post.id, name: post.title, likes: post.likes || 0, gradient: post.gradient }],
+  };
+}
+
 export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
   const [activeTab, setActiveTab] = useState('Trending');
   const [openedPost, setOpenedPost] = useState(null);
   const [viewedCreator, setViewedCreator] = useState(null);
+  const [userPosts, setUserPosts] = useState([]);
+
+  // Load the user's published posts and hydrate each with its setup photo
+  // (kept out of the stored post to stay under AsyncStorage's row cap). Runs on
+  // mount — HomeScreen remounts whenever you navigate back to it, so a setup
+  // posted elsewhere shows up as soon as you return to the feed.
+  useEffect(() => {
+    (async () => {
+      const [posts, setups, allItems] = await Promise.all([getPosts(), getSetups(), getAllItems()]);
+      const hydrated = posts.map(p => {
+        const setup = setups.find(s => s.id === p.setupId);
+        return {
+          ...p,
+          photo: setup?.photo,
+          // The real arranged board + the gear library, so the feed card can
+          // render the actual board the user posted (not the placeholder grid).
+          boardSetup: setup,
+          boardItems: allItems,
+        };
+      });
+      setUserPosts(hydrated);
+    })();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -267,7 +314,7 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
           contentContainerStyle={styles.feed}
           showsVerticalScrollIndicator={false}
         >
-          {MOCK_SETUPS.map(setup => (
+          {[...userPosts, ...MOCK_SETUPS].map(setup => (
             <SetupCard key={setup.id} setup={setup} onPress={() => setOpenedPost(setup)} />
           ))}
         </ScrollView>
@@ -297,7 +344,7 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
             <SetupPostScreen
               post={openedPost}
               onBack={() => setOpenedPost(null)}
-              onOpenCreator={() => setViewedCreator(MOCK_CREATORS[openedPost.username])}
+              onOpenCreator={() => setViewedCreator(MOCK_CREATORS[openedPost.username] || creatorFromPost(openedPost))}
             />
           ) : null}
         </SafeAreaProvider>
@@ -397,8 +444,7 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   cardUsername: { color: C.text, fontSize: 17, fontWeight: '700' },
 
-  // Real photo hero — the beauty shot. Caption text stays white regardless of
-  // app theme since it's overlaid directly on the photo, not the card.
+  // Real photo hero — the beauty shot.
   photoWrap: {
     marginHorizontal: 14,
     marginBottom: 12,
@@ -406,11 +452,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     justifyContent: 'flex-end',
-  },
-  photoCaption: { padding: 14 },
-  photoCaptionText: {
-    color: '#FFFFFF', fontSize: 13, fontWeight: '600',
-    textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
 
   // Interactive board panel

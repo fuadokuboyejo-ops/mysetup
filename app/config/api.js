@@ -1,8 +1,10 @@
-// A PHYSICAL device can't reach the dev machine via 'localhost' (that resolves
-// to the phone itself), so this must be the PC's LAN IP. Find it on Windows with
-// `ipconfig` (IPv4 Address). If your DHCP lease changes this, update it here.
-// (iOS Simulator / Android emulator can use 'localhost' / '10.0.2.2' instead.)
-const LOCAL_IP = '192.168.68.51';
+// How the app reaches the local backend depends on where it runs:
+//   Android emulator : '10.0.2.2'      (special alias to the host machine)
+//   iOS Simulator    : 'localhost'
+//   PHYSICAL device  : the PC's LAN IP (e.g. '192.168.68.51' — find via ipconfig);
+//                      the device must be on the same Wi-Fi.
+// Currently set for the Android emulator.
+const LOCAL_IP = '10.0.2.2';
 const PORT = 3001;
 
 export const API_BASE = `http://${LOCAL_IP}:${PORT}`;

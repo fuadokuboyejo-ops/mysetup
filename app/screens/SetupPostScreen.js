@@ -3,22 +3,14 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MiniBoard } from './HomeScreen';
+import PulsingDot from '../components/PulsingDot';
+import BoardPreview from '../components/BoardPreview';
+import DotCard from '../components/DotCard';
 
 const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
-
-// A single tagged dot on the hero photo — same ring treatment as SetupScreen's
-// scan dots, sized down for a read-only view (no drag, no remove button).
-function PhotoDot({ x, y }) {
-  return (
-    <View style={[styles.dot, { left: `${x}%`, top: `${y}%` }]} pointerEvents="none">
-      <View style={styles.dotGlow}>
-        <View style={styles.dotInner} />
-      </View>
-    </View>
-  );
-}
 
 // Read-only public view of someone else's setup post — opened from the Home
 // feed. Distinct from SetupScreen (which edits your own board): this one is
@@ -28,6 +20,18 @@ const SECTION_COUNT = 5;
 
 export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
   const [tagsOn, setTagsOn] = useState(true);
+  // The photo tag whose floating card is open (tap a dot to toggle).
+  const [selectedDot, setSelectedDot] = useState(null);
+  // An item chosen from a board node: { dot, item }. When set, the photo shows
+  // ONLY that tag (highlighted) and the item is shown under the board instead of
+  // a floating card.
+  const [boardSel, setBoardSel] = useState(null);
+  // Natural aspect ratio of the photo — render at this with 'contain' so tag
+  // %-positions land exactly where they do in the Setup photo view.
+  const [photoAspect, setPhotoAspect] = useState(null);
+  const selectedItem = selectedDot
+    ? (post.boardItems || []).find(i => i.id === selectedDot.libraryItemId)
+    : null;
   const sectionOpacity = useRef([...Array(SECTION_COUNT)].map(() => new Animated.Value(0))).current;
   const sectionTranslate = useRef([...Array(SECTION_COUNT)].map(() => new Animated.Value(22))).current;
 
@@ -88,11 +92,48 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
             </View>
           </Animated.View>
 
-          {/* Hero photo with tagged dots */}
-          <Animated.View style={[styles.photoWrap, sectionStyle(2)]}>
-            <LinearGradient colors={post.gradient} style={StyleSheet.absoluteFill} />
-            {tagsOn && post.dots.map((d, i) => <PhotoDot key={i} x={d.x} y={d.y} />)}
-            <TouchableOpacity style={styles.tagsToggle} onPress={() => setTagsOn(v => !v)} activeOpacity={0.85}>
+          {/* Hero photo with tagged dots — natural aspect + 'contain' so the
+              whole image shows and tags line up with the Setup photo view. */}
+          <Animated.View style={[styles.photoWrap, photoAspect ? { aspectRatio: photoAspect } : null, sectionStyle(2)]}>
+            {post.photo ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${post.photo}` }}
+                style={StyleSheet.absoluteFill}
+                contentFit="contain"
+                onLoad={(e) => {
+                  const s = e?.source;
+                  if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
+                }}
+              />
+            ) : (
+              <LinearGradient colors={post.gradient} style={StyleSheet.absoluteFill} />
+            )}
+            {tagsOn && (boardSel ? (
+              // A board item is selected — show only its tag, highlighted.
+              <PulsingDot
+                key={boardSel.dot.id}
+                x={boardSel.dot.x}
+                y={boardSel.dot.y}
+                index={0}
+                selected
+                onPress={() => setBoardSel(null)}
+              />
+            ) : (
+              post.dots.map((d, i) => (
+                <PulsingDot
+                  key={d.id ?? i}
+                  x={d.x}
+                  y={d.y}
+                  index={i}
+                  selected={selectedDot?.id === d.id}
+                  onPress={() => setSelectedDot(prev => (prev?.id === d.id ? null : d))}
+                />
+              ))
+            ))}
+            {tagsOn && !boardSel && (
+              <DotCard item={selectedItem} dot={selectedDot} onClose={() => setSelectedDot(null)} />
+            )}
+            <TouchableOpacity style={styles.tagsToggle} onPress={() => { setTagsOn(v => !v); setSelectedDot(null); setBoardSel(null); }} activeOpacity={0.85}>
               <Text style={styles.tagsToggleIcon}>{tagsOn ? '◉' : '◯'}</Text>
               <Text style={styles.tagsToggleText}>tags {tagsOn ? 'on' : 'off'}</Text>
             </TouchableOpacity>
@@ -106,10 +147,31 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
               <View style={styles.sectionDividerLine} />
             </View>
 
-            {/* The board — same interactive board treatment as the feed card */}
+            {/* The board — the real arranged board for user posts, or the
+                placeholder mini-board for the mock/sample feed. */}
             <View style={styles.boardPanel}>
-              <MiniBoard slots={post.slots} />
+              {post.boardSetup ? (
+                <BoardPreview
+                  setup={post.boardSetup}
+                  items={post.boardItems}
+                  onItemPress={item => {
+                    // Tapping a board node highlights only that item's photo tag
+                    // and shows the item under the board.
+                    const dot = (post.dots || []).find(d => d.libraryItemId === item.id);
+                    if (dot) { setSelectedDot(null); setTagsOn(true); setBoardSel({ dot, item }); }
+                  }}
+                />
+              ) : (
+                <MiniBoard slots={post.slots} />
+              )}
             </View>
+
+            {/* The item selected from the board — shown here beneath it */}
+            {boardSel && (
+              <View style={styles.boardSelectedItem}>
+                <DotCard inline item={boardSel.item} onClose={() => setBoardSel(null)} />
+              </View>
+            )}
           </Animated.View>
 
           {/* Extra peripherals — the gear that doesn't fit on the board itself */}
@@ -182,7 +244,8 @@ const styles = StyleSheet.create({
   tagPillText: { color: C.tagText, fontSize: 13.5, fontWeight: '600' },
 
   photoWrap: {
-    marginHorizontal: 20, height: 320, borderRadius: 18, overflow: 'hidden', position: 'relative',
+    marginHorizontal: 20, aspectRatio: 4 / 3, borderRadius: 18, overflow: 'hidden', position: 'relative',
+    backgroundColor: '#EAE8E2',
   },
   tagsToggle: {
     position: 'absolute', top: 14, right: 14,
@@ -192,14 +255,6 @@ const styles = StyleSheet.create({
   },
   tagsToggleIcon: { color: '#FFFFFF', fontSize: 12 },
   tagsToggleText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-
-  dot: { position: 'absolute', marginLeft: -13, marginTop: -13 },
-  dotGlow: {
-    width: 26, height: 26, borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dotInner: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#FFFFFF' },
 
   sectionDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, marginTop: 28, marginBottom: 16 },
   sectionDividerLine: { flex: 1, height: 1, backgroundColor: C.border },
@@ -211,6 +266,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
     padding: 14,
   },
+  boardSelectedItem: { marginHorizontal: 20, marginTop: 12 },
 
   extrasSection: { marginTop: 22, paddingHorizontal: 20 },
   extrasHeader: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },

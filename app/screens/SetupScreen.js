@@ -5,11 +5,29 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup } from '../config/setup';
+import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup, addPost, buildPostFromSetup } from '../config/setup';
 import {
   computeLayout, normalizeNodes, nodeSpan, getVisualScale,
 } from '../config/boardLayout';
 import PostComposerScreen from './PostComposerScreen';
+import PulsingDot from '../components/PulsingDot';
+
+// Where the image actually draws inside a container of size (cw × ch) for a
+// given resize mode, given the image's aspect ratio (w/h). Tags are anchored to
+// THIS rect (not the container) so they line up no matter how the photo is
+// letterboxed ('contain') or cropped ('cover') in each view.
+function imageFitRect(cw, ch, aspect, mode) {
+  if (!cw || !ch || !aspect) return { left: 0, top: 0, width: cw || 0, height: ch || 0 };
+  const containerWider = cw / ch > aspect;
+  let width, height;
+  // contain → fit inside (letterbox); cover → fill (crop).
+  if (mode === 'contain' ? containerWider : !containerWider) {
+    height = ch; width = ch * aspect;
+  } else {
+    width = cw; height = cw / aspect;
+  }
+  return { left: (cw - width) / 2, top: (ch - height) / 2, width, height };
+}
 
 const SLOT_DEFS = [
   { key: 'monitor',    label: 'monitor',    categories: ['monitor', 'display', 'screen', 'tv'] },
@@ -199,31 +217,16 @@ function ArrangeBoardModal({ visible, items, initialSlots, onSave, onClose }) {
 }
 
 // ─── Photo Tab: Dot ──────────────────────────────────────────────────────────
-function PhotoDot({ dot, selected, editing, onPress, onRemove }) {
+// View-mode tag on the photo — a pulsing dot that opens the item card on tap.
+// (Edit mode uses DraggableDot below, which stays static while being dragged.)
+function PhotoDot({ dot, selected, index, onPress }) {
   return (
-    <TouchableOpacity
-      style={[P.dot, { left: `${dot.x}%`, top: `${dot.y}%` }]}
-      onPress={() => onPress(dot)}
-      activeOpacity={0.8}
-    >
-      <View style={[P.dotGlow, selected && P.dotGlowSelected]}>
-        <View style={[P.dotInner, selected && P.dotInnerSelected]} />
-      </View>
-      {editing && (
-        <TouchableOpacity
-          style={P.dotRemove}
-          onPress={() => onRemove(dot.id)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={P.dotRemoveText}>✕</Text>
-        </TouchableOpacity>
-      )}
-    </TouchableOpacity>
+    <PulsingDot x={dot.x} y={dot.y} index={index} selected={selected} onPress={() => onPress(dot)} />
   );
 }
 
 // ─── Photo Tab: Draggable existing dot — lets user reposition placed tags ─────
-function DraggableDot({ dot, photoLayoutRef, moveDotRef, onRemove }) {
+function DraggableDot({ dot, imgRectRef, moveDotRef, onRemove }) {
   const [dragging, setDragging] = useState(false);
 
   const pr = useRef(PanResponder.create({
@@ -232,14 +235,14 @@ function DraggableDot({ dot, photoLayoutRef, moveDotRef, onRemove }) {
     onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4,
     onPanResponderGrant: () => setDragging(true),
     onPanResponderMove: (e) => {
-      const pl = photoLayoutRef.current;
+      const pl = imgRectRef.current;
       if (!pl) return;
       const x = Math.round(Math.max(2, Math.min(98, (e.nativeEvent.pageX - pl.x) / pl.w * 100)));
       const y = Math.round(Math.max(2, Math.min(98, (e.nativeEvent.pageY - pl.y) / pl.h * 100)));
       moveDotRef.current?.(dot.id, x, y, false);
     },
     onPanResponderRelease: (e) => {
-      const pl = photoLayoutRef.current;
+      const pl = imgRectRef.current;
       if (pl) {
         const x = Math.round(Math.max(2, Math.min(98, (e.nativeEvent.pageX - pl.x) / pl.w * 100)));
         const y = Math.round(Math.max(2, Math.min(98, (e.nativeEvent.pageY - pl.y) / pl.h * 100)));
@@ -359,6 +362,10 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   const [setupPhoto, setSetupPhoto] = useState(setup?.photo || null);
   const [boardLayout, setBoardLayout] = useState(setup?.boardLayout || null);
   const [boardW, setBoardW] = useState(0);
+  // Natural aspect ratio (w/h) of the setup photo + the edit photo box size —
+  // used to anchor tags to the drawn image rather than the container.
+  const [photoAspect, setPhotoAspect] = useState(null);
+  const [editSize, setEditSize] = useState({ w: 0, h: 0 });
 
   // Tag drag state
   const [dragCard, setDragCard] = useState(null);
@@ -387,6 +394,22 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   const dotsRef = useRef([]);
   const setupIdRef = useRef(setup?.id || 'default');
   const cardPRCache = useRef({});
+
+  // The drawn-image rect (page coords) inside the edit photo box — what tag
+  // drops and drags are measured against. Kept in a ref for the pan handlers.
+  const photoImgRectRef = useRef(null);
+  const photoAspectRef = useRef(null);
+  const updatePhotoImgRect = () => {
+    const pl = photoLayout.current;
+    const a = photoAspectRef.current;
+    if (pl && a) {
+      const r = imageFitRect(pl.w, pl.h, a, 'contain');
+      photoImgRectRef.current = { x: pl.x + r.left, y: pl.y + r.top, w: r.width, h: r.height };
+    } else {
+      photoImgRectRef.current = pl;
+    }
+  };
+  useEffect(() => { photoAspectRef.current = photoAspect; updatePhotoImgRect(); }, [photoAspect]);
 
   // moveDotRef — always holds the latest move handler, read by DraggableDot PanResponder
   const moveDotRef = useRef(null);
@@ -506,14 +529,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     },
     onPanResponderRelease: (e) => {
       const { pageX, pageY } = e.nativeEvent;
-      const pl = photoLayout.current;
+      // Measure against the drawn image rect, not the container, so the tag
+      // lands on the same image point in every view.
+      const rect = photoImgRectRef.current;
       const cur = dragCardRef.current;
-      if (pl && cur && pageX >= pl.x && pageX <= pl.x + pl.w && pageY >= pl.y && pageY <= pl.y + pl.h) {
-        const xPct = Math.round((pageX - pl.x) / pl.w * 100);
-        const yPct = Math.round((pageY - pl.y) / pl.h * 100);
+      if (rect && cur && pageX >= rect.x && pageX <= rect.x + rect.w && pageY >= rect.y && pageY <= rect.y + rect.h) {
+        const xPct = Math.round((pageX - rect.x) / rect.w * 100);
+        const yPct = Math.round((pageY - rect.y) / rect.h * 100);
         const newDot = { id: Date.now().toString(), x: xPct, y: yPct, libraryItemId: cur.id };
-        // Replace any existing dot for this item
-        const newDots = [...dotsRef.current.filter(d => d.libraryItemId !== cur.id), newDot];
+        // Append — the same item can be tagged multiple times on the photo.
+        const newDots = [...dotsRef.current, newDot];
         setDots(newDots);
         updateSetupDots(setupIdRef.current, newDots);
       }
@@ -585,8 +610,9 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     }
     return null;
   };
-  // Move an item onto a node. From the tray: displace any current occupant and
-  // pull the item out of any other slot. Between slots: swap.
+  // Move an item onto a node. From the tray: drop it into the target, replacing
+  // whatever was there — the same item MAY occupy multiple nodes (e.g. a dual-
+  // monitor setup). Between slots: swap the two nodes' contents.
   const placeItemOnNode = (itemId, fromNode, toNode) => {
     if (!toNode || fromNode === toNode) return;
     const next = { ...boardSlots };
@@ -595,7 +621,6 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
       if (occupant) next[fromNode] = occupant; else delete next[fromNode];
       next[toNode] = itemId;
     } else {
-      for (const k of Object.keys(next)) if (next[k] === itemId) delete next[k];
       next[toNode] = itemId;
     }
     persistSlots(next);
@@ -868,28 +893,53 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               <View
                 style={[styles.photoArea, styles.photoAreaTagMode]}
                 ref={photoRef}
-                onLayout={() => {
+                onLayout={(e) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  setEditSize({ w: width, h: height });
                   photoRef.current?.measure((_, __, w, h, px, py) => {
                     photoLayout.current = { x: px, y: py, w, h };
+                    updatePhotoImgRect();
                   });
                 }}
               >
                 {setupPhoto ? (
-                  <Image source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+                  <Image
+                    source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="contain"
+                    onLoad={(e) => {
+                      const s = e.nativeEvent.source;
+                      if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
+                    }}
+                  />
                 ) : (
                   <View style={styles.photoPlaceholder}>
                     <Text style={styles.photoPlaceholderText}>No photo yet</Text>
                   </View>
                 )}
-                {dots.map(dot => (
-                  <DraggableDot
-                    key={dot.id}
-                    dot={dot}
-                    photoLayoutRef={photoLayout}
-                    moveDotRef={moveDotRef}
-                    onRemove={removeDot}
-                  />
-                ))}
+                {/* Dots live in an overlay pinned to the drawn image rect, so a
+                    dot's % position is relative to the image, not the box. */}
+                {(() => {
+                  const r = (photoAspect && editSize.w)
+                    ? imageFitRect(editSize.w, editSize.h, photoAspect, 'contain')
+                    : null;
+                  const overlay = r
+                    ? { position: 'absolute', left: r.left, top: r.top, width: r.width, height: r.height }
+                    : StyleSheet.absoluteFill;
+                  return (
+                    <View style={overlay} pointerEvents="box-none">
+                      {dots.map(dot => (
+                        <DraggableDot
+                          key={dot.id}
+                          dot={dot}
+                          imgRectRef={photoImgRectRef}
+                          moveDotRef={moveDotRef}
+                          onRemove={removeDot}
+                        />
+                      ))}
+                    </View>
+                  );
+                })()}
                 <TouchableOpacity
                   style={[styles.tagToggle, styles.tagToggleOn]}
                   onPress={() => { setTagsOn(false); setSelectedDot(null); }}
@@ -937,10 +987,19 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         ) : (
           /* View mode: scrollable — photo + tagged items below */
           <ScrollView style={styles.photoScroll} showsVerticalScrollIndicator={false} bounces>
-            {/* Photo */}
-            <View style={styles.photoAreaScroll}>
+            {/* Photo — shown at its natural aspect with 'contain' so the whole
+                image is visible and tag %-positions map straight onto it. */}
+            <View style={[styles.photoAreaScroll, photoAspect ? { aspectRatio: photoAspect } : null]}>
               {setupPhoto ? (
-                <Image source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                  onLoad={(e) => {
+                    const s = e.nativeEvent.source;
+                    if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
+                  }}
+                />
               ) : (
                 <View style={styles.photoPlaceholder}>
                   <Text style={styles.photoPlaceholderIcon}>◻</Text>
@@ -962,14 +1021,13 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                 <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setSelectedDot(null)} activeOpacity={1} />
               )}
 
-              {dots.map(dot => (
+              {dots.map((dot, i) => (
                 <PhotoDot
                   key={dot.id}
                   dot={dot}
+                  index={i}
                   selected={selectedDot?.id === dot.id}
-                  editing={false}
                   onPress={d => setSelectedDot(prev => prev?.id === d.id ? null : d)}
-                  onRemove={removeDot}
                 />
               ))}
 
@@ -1165,9 +1223,14 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             setup={setup}
             items={items}
             onClose={() => setPostComposerOpen(false)}
-            onSubmit={(data) => {
+            onSubmit={async (data) => {
               setPostComposerOpen(false);
-              Alert.alert('Posted', `"${data.title}" is now live on your feed.`);
+              try {
+                await addPost(buildPostFromSetup(setup, items, data));
+                Alert.alert('Posted', `"${data.title}" is now live on your feed.`);
+              } catch (e) {
+                Alert.alert('Could not post', e.message);
+              }
             }}
           />
         </SafeAreaProvider>
