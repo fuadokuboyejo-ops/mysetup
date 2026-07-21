@@ -1,16 +1,30 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Modal, StatusBar, TextInput, Animated,
+  ActivityIndicator, Alert, Modal, StatusBar, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image as ExpoImage } from 'expo-image';
+import LoadingScreen from '../components/LoadingScreen';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
 import { getAllItems, getSetups, updateSetupPhoto, createSetup, updateSetupLayout, updateSetupSlots, getGenerationsUsed, incrementGenerationsUsed, addGenerationToHistory, GENERATIONS_LIMIT } from '../config/setup';
-import { REVAMP_ENDPOINT } from '../config/api';
+import { supabase } from '../config/supabase';
 import { normalizeNodes, computeLayout, nodeSpan } from '../config/boardLayout';
+import { imageUri, isMediaUrl } from '../config/media';
+
+// Vibe presets shown before generating a fresh setup photo. `prompt` is the
+// descriptive style string handed to the revamp function (it becomes "Style: …"
+// in the Gemini prompt), so the generated background/theme matches what the user
+// actually wants instead of a random look.
+const THEMES = [
+  { key: 'minimal',      label: 'Minimal',      desc: 'Clean & simple',   prompt: 'minimal and clean, neutral white and light-grey tones, uncluttered desk, soft natural daylight, matte surfaces' },
+  { key: 'gaming',       label: 'Gaming',       desc: 'RGB & bold',       prompt: 'gaming battlestation with vibrant RGB lighting, dark room, neon accent glow, dramatic moody lighting' },
+  { key: 'cozy',         label: 'Cozy',         desc: 'Warm & homey',     prompt: 'cozy and warm, wood tones, soft warm lighting, plants and homey decor, inviting atmosphere' },
+  { key: 'aesthetic',    label: 'Aesthetic',    desc: 'Pastel & soft',    prompt: 'aesthetic pastel vibe, soft pink and purple tones, ambient LED backlight, dreamy soft focus' },
+  { key: 'professional', label: 'Professional', desc: 'Tidy office',      prompt: 'professional productive office, neutral and organized, bright even studio lighting, tidy cable management' },
+  { key: 'dark',         label: 'Blackout',     desc: 'Sleek & dark',     prompt: 'sleek all-black setup, dark matte surfaces, low ambient lighting, subtle rim light, high-contrast' },
+];
 
 // Loosely match library items into the board's slots by category / name.
 function matchBoard(items, nodes) {
@@ -34,22 +48,9 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
   const [setups, setSetups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const loadPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (!generating) return;
-    loadPulse.setValue(1);
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(loadPulse, { toValue: 1.06, duration: 900, useNativeDriver: true }),
-        Animated.timing(loadPulse, { toValue: 1, duration: 900, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [generating]);
   const [image, setImage] = useState(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
   const [savingToCameraRoll, setSavingToCameraRoll] = useState(false);
   const [boardW, setBoardW] = useState(0);
   const [generationsUsed, setGenerationsUsed] = useState(0);
@@ -59,9 +60,8 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
   const autoGenerateStarted = useRef(false);
 
   // `setup` (from App.js's activeSetup) goes stale after arranging — arranging
-  // only persists to AsyncStorage + SetupScreen's own local state, it never
-  // flows back up. Look up the freshest copy from `setups` (reloaded from
-  // storage on every mount) instead of trusting the prop's slots directly.
+  // persists remotely + SetupScreen's own local state, but it never flows back
+  // up. Look up the freshest Supabase copy instead of trusting stale props.
   const currentSetup = setup ? (setups.find(s => s.id === setup.id) || setup) : null;
 
   // Use the setup's own board layout when we have one (e.g. arriving from
@@ -89,7 +89,11 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const generate = async () => {
+  // Tapping Generate first runs the guards. When we're generating a FRESH scene
+  // (no base photo), the background/theme is invented — so ask the user what vibe
+  // they want before spending the generation. In edit mode (basePhoto present) we
+  // keep their real photo untouched, so there's nothing to theme — generate directly.
+  const generate = () => {
     if (items.length === 0) {
       Alert.alert('No items yet', 'Scan a few products first, then generate a setup photo.');
       return;
@@ -102,30 +106,52 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
       Alert.alert('Monthly limit reached', `You've used all ${GENERATIONS_LIMIT} generations this month. It resets next month.`);
       return;
     }
+    if (basePhoto) {
+      runGeneration(null);
+    } else {
+      setStyleOpen(true);
+    }
+  };
+
+  const chooseTheme = (theme) => {
+    setStyleOpen(false);
+    runGeneration(theme?.prompt || null);
+  };
+
+  const runGeneration = async (style) => {
     const source = placedItems;
     setGenerating(true);
     try {
+      const basePhotoValue = basePhoto?.base64 || basePhoto?.uri;
       const payload = {
         items: source.map(it => ({
           name: it.product?.product_name,
           category: it.product?.category,
-          photo: it.photoBase64,
+          ...(isMediaUrl(it.photoBase64)
+            ? { photoUrl: it.photoBase64 }
+            : { photo: it.photoBase64 }),
         })),
         // "Try different gear" starts from a real photo of the user's setup;
         // the backend uses it as the base scene to re-render with new gear.
-        basePhoto: basePhoto?.base64 || undefined,
+        ...(isMediaUrl(basePhotoValue)
+          ? { basePhotoUrl: basePhotoValue }
+          : { basePhoto: basePhotoValue || undefined }),
+        // Chosen vibe (Minimal / Gaming / …) — steers the generated background.
+        style: style || undefined,
+        // Setup kind — a 'server' board should render as a home lab (racks,
+        // networking gear), not a gaming desk. Defaults to 'pc'.
+        setupType: currentSetup?.type || setup?.type || 'pc',
       };
-      const res = await fetch(REVAMP_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      // Supabase Edge Function (functions/revamp) — holds the Gemini key
+      // server-side; invoke() attaches the signed-in user's JWT.
+      const { data, error } = await supabase.functions.invoke('revamp', {
+        body: payload,
       });
-      const data = await res.json();
-      if (!res.ok || !data.image) throw new Error(data.error || 'Generation failed');
+      if (error) throw new Error(error.message || 'Generation failed');
+      if (!data?.image) throw new Error(data?.error || 'Generation failed');
       setImage(data.image);
       setGenerationsUsed(await incrementGenerationsUsed());
-      // Store a small compressed thumbnail, not the full image — Android's
-      // AsyncStorage backend rejects rows over ~2MB (the full render is 2-3MB).
+      // Store a small compressed thumbnail so history stays quick to load.
       ImageManipulator.manipulateAsync(
         `data:image/png;base64,${data.image}`,
         [{ resize: { width: 320 } }],
@@ -207,7 +233,7 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" hidden={generating} />
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -256,7 +282,7 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
                   ]}
                 >
                   {item ? (
-                    <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.slotImg} resizeMode="contain" />
+                    <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={styles.slotImg} resizeMode="contain" />
                   ) : (
                     <View style={styles.slotEmptyContent} pointerEvents="none">
                       {!vertical && <Text style={styles.slotPlus}>+</Text>}
@@ -289,7 +315,7 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
 
           {image && (
             <View style={styles.preview}>
-              <Image source={{ uri: `data:image/png;base64,${image}` }} style={styles.previewImg} resizeMode="contain" />
+              <Image source={{ uri: imageUri(image, 'image/png') }} style={styles.previewImg} resizeMode="contain" />
             </View>
           )}
 
@@ -329,17 +355,35 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
       </SafeAreaView>
 
       {/* Generating overlay */}
-      <Modal visible={generating} transparent animationType="fade">
+      <Modal
+        visible={generating}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        navigationBarTranslucent
+      >
         <View style={styles.loadOverlay}>
-          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: loadPulse }] }]}>
-            <ExpoImage source={require('../assets/loadingscreen.png')} style={StyleSheet.absoluteFill} contentFit="cover" />
-          </Animated.View>
-          <View style={styles.loadContent}>
-            <ActivityIndicator color="#161616" size="large" />
-            <Text style={styles.loadText}>Generating your setup photo…</Text>
-            <Text style={styles.loadSub}>This can take up to a minute.</Text>
-          </View>
+          <LoadingScreen style={styles.loadingMedia} />
         </View>
+      </Modal>
+
+      {/* Vibe picker — asked before generating a fresh scene */}
+      <Modal visible={styleOpen} transparent animationType="slide" onRequestClose={() => setStyleOpen(false)}>
+        <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setStyleOpen(false)}>
+          <TouchableOpacity style={styles.sheet} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>What vibe are you going for?</Text>
+            <Text style={styles.sheetSub}>We’ll build the background and lighting to match.</Text>
+            <View style={styles.themeGrid}>
+              {THEMES.map(t => (
+                <TouchableOpacity key={t.key} style={styles.themeCard} onPress={() => chooseTheme(t)} activeOpacity={0.85}>
+                  <Text style={styles.themeLabel}>{t.label}</Text>
+                  <Text style={styles.themeDesc}>{t.desc}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Save-to-setup picker */}
@@ -453,15 +497,21 @@ const styles = StyleSheet.create({
   saveBtn: { borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#161616', paddingVertical: 16, alignItems: 'center' },
   saveText: { color: C.text, fontSize: 15, fontWeight: '700' },
 
-  loadOverlay: { flex: 1, backgroundColor: '#DCD3E8', alignItems: 'center', justifyContent: 'flex-end' },
-  loadContent: { alignItems: 'center', gap: 10, paddingBottom: 90, paddingHorizontal: 40 },
-  loadText: { color: '#161616', fontSize: 16, fontWeight: '700' },
-  loadSub: { color: '#5B5566', fontSize: 13 },
+  loadOverlay: { flex: 1, backgroundColor: '#000000', overflow: 'hidden' },
+  loadingMedia: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
 
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.panel, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, gap: 8 },
   sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 10 },
   sheetTitle: { color: C.text, fontSize: 17, fontWeight: '700', marginBottom: 8 },
+  sheetSub: { color: C.sub, fontSize: 13, marginTop: -4, marginBottom: 6 },
+  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 },
+  themeCard: {
+    width: '31.5%', borderRadius: 14, borderWidth: 1.5, borderColor: '#161616',
+    backgroundColor: '#FFFFFF', paddingVertical: 16, paddingHorizontal: 10, alignItems: 'center',
+  },
+  themeLabel: { color: C.text, fontSize: 14, fontWeight: '800' },
+  themeDesc: { color: C.sub, fontSize: 11, marginTop: 3, textAlign: 'center' },
   sheetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderTopWidth: 1, borderTopColor: C.border },
   sheetRowText: { color: C.text, fontSize: 15, fontWeight: '500' },
   sheetChevron: { color: C.sub, fontSize: 22 },

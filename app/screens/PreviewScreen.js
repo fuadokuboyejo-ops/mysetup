@@ -3,7 +3,7 @@ import {
   View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
   TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal,
 } from 'react-native';
-import { SCAN_ENDPOINT } from '../config/api';
+import { supabase } from '../config/supabase';
 
 const mono = Platform.select({ ios: 'Courier New', android: 'monospace', default: 'monospace' });
 
@@ -58,18 +58,14 @@ export default function PreviewScreen({ photoUri, photoBase64, productType, onRe
   const analyzeSetup = async () => {
     setScanning(true);
     try {
-      const response = await fetch(SCAN_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photo: photoBase64 }),
+      // Supabase Edge Function (functions/scan) — holds the Mistral key
+      // server-side; invoke() attaches the signed-in user's JWT.
+      const { data, error } = await supabase.functions.invoke('scan', {
+        body: { photo: photoBase64, productType },
       });
+      if (error) throw new Error(error.message || 'Scan request failed');
+      if (data?.error) throw new Error(data.details || data.error);
 
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(`Server error ${response.status}: ${errBody.details || errBody.error || 'unknown'}`);
-      }
-
-      const data = await response.json();
       onResults(data.product, photoUri);
     } catch (e) {
       Alert.alert('Scan Failed', e.message, [{ text: 'OK' }]);

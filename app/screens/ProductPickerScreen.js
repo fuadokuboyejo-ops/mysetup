@@ -1,8 +1,10 @@
-import { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Image, Alert, Animated } from 'react-native';
+import { useCallback, useEffect, useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, Animated } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle } from 'react-native-svg';
 import { getAllItems } from '../config/setup';
+import { TutorialMultiSpotlight } from '../components/TutorialOverlay';
+import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, jumpTutorial, skipTutorial } from '../config/tutorial';
 
 export const PRODUCT_GUIDES = {
   mouse:      { label: 'Mouse',     tip: 'side profile so the shape reads',      outline: 'portrait',  guide: 'Side profile so the shape reads. Steady, well-lit.' },
@@ -72,14 +74,73 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
   const [pendingPhoto, setPendingPhoto] = useState(null);
   const limit = isPremium ? PREMIUM_LIMIT : FREE_LIMIT;
   const atCap = photoCount >= limit;
+  const pickStep = useTutorialStep('pick-category');
+  const tutorialNodes = useRef(new Map());
+  const tutorialMeasureQueued = useRef(false);
+  const tutorialScrollY = useRef(new Animated.Value(0)).current;
+  const [tutorialRects, setTutorialRects] = useState([]);
+  // The photo count arrives async and reflows the page, so the tutorial waits
+  // for it before measuring — until then the overlay shows the loading screen.
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+  // Bottom edge of the fixed header, in window coords — the overlay clips its
+  // scrolling cutouts to the area below it.
+  const [tutorialViewportTop, setTutorialViewportTop] = useState(0);
+  const headerRef = useRef(null);
+  const measureHeader = useCallback(() => {
+    headerRef.current?.measureInWindow?.((x, y, width, height) => {
+      if (height > 0) setTutorialViewportTop(y + height);
+    });
+  }, []);
 
+  const registerTutorialNode = useCallback((key, node) => {
+    if (node) tutorialNodes.current.set(key, node);
+    else tutorialNodes.current.delete(key);
+  }, []);
+
+  const measureTutorialTargets = useCallback(() => {
+    // Wait for the item count to land first — it reflows the page, and measuring
+    // before that yields oversized cutouts that leave the screen looking undimmed.
+    if (!itemsLoaded || !pickStep.active || pendingPhoto || tutorialMeasureQueued.current) return;
+    tutorialMeasureQueued.current = true;
+    requestAnimationFrame(() => {
+      tutorialMeasureQueued.current = false;
+      const entries = [...tutorialNodes.current.entries()].filter(([, node]) => node?.measureInWindow);
+      if (!entries.length) return;
+      const measured = [];
+      let remaining = entries.length;
+      entries.forEach(([key, node]) => {
+        node.measureInWindow((x, y, width, height) => {
+          if (width > 0 && height > 0) measured.push({ key, x, y, width, height });
+          remaining -= 1;
+          if (remaining === 0) {
+            setTutorialRects(measured);
+          }
+        });
+      });
+    });
+  }, [itemsLoaded, pendingPhoto, pickStep.active]);
+
+  useEffect(() => {
+    if (!itemsLoaded || !pickStep.active || pendingPhoto) {
+      setTutorialRects([]);
+      return undefined;
+    }
+    // Data has landed, so the layout is final — measure now, with a couple of
+    // quick retries in case measureInWindow still reports 0s on the first pass.
+    const timers = [0, 80, 220, 500].map(ms => setTimeout(measureTutorialTargets, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [itemsLoaded, measureTutorialTargets, pendingPhoto, pickStep.active]);
   // Entrance animation: stat card, gallery tile, then each category — staggered.
   const sectionCount = 2 + products.length;
   const sectionTranslate = useRef(Array.from({ length: sectionCount }, () => new Animated.Value(60))).current;
   const sectionOpacity = useRef(Array.from({ length: sectionCount }, () => new Animated.Value(0))).current;
 
   useEffect(() => {
-    getAllItems().then(items => setPhotoCount(items.length)).catch(() => {});
+    getAllItems()
+      .then(items => setPhotoCount(items.length))
+      .catch(() => {})
+      // Either way the page is settled — release the tutorial's loading cover.
+      .finally(() => setItemsLoaded(true));
     Animated.stagger(90, sectionTranslate.map((_, i) => Animated.parallel([
       Animated.spring(sectionTranslate[i], { toValue: 0, friction: 8, useNativeDriver: true }),
       Animated.timing(sectionOpacity[i], { toValue: 1, duration: 300, useNativeDriver: true }),
@@ -113,7 +174,11 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
   };
 
   const handleCategoryPress = (key, product) => {
+    advanceTutorial('pick-category'); // no-op unless the tutorial is on this step
     if (pendingPhoto) {
+      // Camera-roll photos go straight to the receipt — no camera screen — so
+      // skip the shutter step too, or the tutorial stalls waiting for it.
+      jumpTutorial('receipt-save');
       onPhotoPicked?.(pendingPhoto.uri, pendingPhoto.base64, key, product);
       setPendingPhoto(null);
     } else if (atCap) {
@@ -125,7 +190,7 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.header} ref={headerRef} onLayout={measureHeader}>
         <TouchableOpacity onPress={pendingPhoto ? () => setPendingPhoto(null) : onBack} style={styles.closeBtn}>
           <Text style={styles.closeText}>✕</Text>
         </TouchableOpacity>
@@ -135,7 +200,15 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <Animated.ScrollView
+        contentContainerStyle={styles.body}
+        showsVerticalScrollIndicator={false}
+        onScroll={pickStep.active ? Animated.event(
+          [{ nativeEvent: { contentOffset: { y: tutorialScrollY } } }],
+          { useNativeDriver: true },
+        ) : undefined}
+        scrollEventThrottle={16}
+      >
         {pendingPhoto ? (
           <View style={styles.pendingWrap}>
             <View style={styles.pendingHardShadow} />
@@ -144,7 +217,13 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
         ) : (
           <>
             <Animated.View
-              style={[styles.statWrap, { opacity: sectionOpacity[0], transform: [{ translateY: sectionTranslate[0] }] }]}
+              style={[
+                styles.statWrap,
+                {
+                  opacity: pickStep.active ? 1 : sectionOpacity[0],
+                  transform: [{ translateY: pickStep.active ? 0 : sectionTranslate[0] }],
+                },
+              ]}
             >
               <View style={styles.statHardShadow} />
               <View style={styles.statCard}>
@@ -167,7 +246,15 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
             <Text style={styles.sectionLabel}>ADD FROM CAMERA ROLL</Text>
             <View style={styles.galleryRow}>
               <Animated.View
-                style={[styles.galleryWrap, { opacity: sectionOpacity[1], transform: [{ translateY: sectionTranslate[1] }] }]}
+                ref={node => registerTutorialNode('camera-roll', node)}
+                onLayout={measureTutorialTargets}
+                style={[
+                  styles.galleryWrap,
+                  {
+                    opacity: pickStep.active ? 1 : sectionOpacity[1],
+                    transform: [{ translateY: pickStep.active ? 0 : sectionTranslate[1] }],
+                  },
+                ]}
               >
                 <View style={styles.galleryHardShadow} />
                 <TouchableOpacity style={styles.galleryTile} onPress={pickFromCameraRoll} activeOpacity={0.8}>
@@ -179,45 +266,73 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
           </>
         )}
 
-        <Text style={styles.sectionLabel}>CATEGORIES</Text>
-        <View style={styles.list}>
-          {products.map(([key, product], i) => {
-            const image = PRODUCT_IMAGES[key];
-            const idx = 2 + i;
-            return (
-              <Animated.View
-                key={key}
-                style={[styles.itemWrap, { opacity: sectionOpacity[idx], transform: [{ translateY: sectionTranslate[idx] }] }]}
-              >
-                <View style={styles.itemHardShadow} />
-                <TouchableOpacity
-                  style={styles.item}
-                  onPress={() => handleCategoryPress(key, product)}
-                  activeOpacity={0.8}
+        <View
+          ref={node => registerTutorialNode('categories-section', node)}
+          onLayout={measureTutorialTargets}
+        >
+          <Text style={styles.sectionLabel}>CATEGORIES</Text>
+          <View style={styles.list}>
+            {products.map(([key, product], i) => {
+              const image = PRODUCT_IMAGES[key];
+              const idx = 2 + i;
+              return (
+                <Animated.View
+                  key={key}
+                  style={[
+                    styles.itemWrap,
+                    {
+                      opacity: pickStep.active ? 1 : sectionOpacity[idx],
+                      transform: [{ translateY: pickStep.active ? 0 : sectionTranslate[idx] }],
+                    },
+                  ]}
                 >
-                  <View style={styles.itemInfo}>
-                    <Text style={styles.itemLabel}>{product.label}</Text>
-                    <Text style={styles.itemGuide} numberOfLines={2}>{product.guide}</Text>
-                  </View>
-                  <View style={styles.itemArt}>
-                    <Image
-                      source={image}
-                      style={styles.itemArtImage}
-                      resizeMode={COVER_KEYS.has(key) ? 'cover' : 'contain'}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })}
+                  <View style={styles.itemHardShadow} />
+                  <TouchableOpacity
+                    style={styles.item}
+                    onPress={() => handleCategoryPress(key, product)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemLabel}>{product.label}</Text>
+                      <Text style={styles.itemGuide} numberOfLines={2}>{product.guide}</Text>
+                    </View>
+                    <View style={styles.itemArt}>
+                      <Image
+                        source={image}
+                        style={styles.itemArtImage}
+                        resizeMode={COVER_KEYS.has(key) ? 'cover' : 'contain'}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+          </View>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+
+      {/* Rendered the moment the step is active — the overlay dims instantly
+          (before measurement) and punches the spotlight cutouts in once the
+          targets are measured, so the plain page never flashes. */}
+      {pickStep.active && !pendingPhoto && (
+        <TutorialMultiSpotlight
+          steps={TUTORIAL_STEPS}
+          stepIndex={pickStep.stepIndex}
+          targetRects={tutorialRects}
+          onSkip={skipTutorial}
+          message="add a photo to your gallery"
+          coachTargetRect={tutorialRects.find(rect => rect.key === 'camera-roll')}
+          scrollOffset={tutorialScrollY}
+          viewportTop={tutorialViewportTop}
+        />
+      )}
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3E9E7' },
+  container: { flex: 1, backgroundColor: '#FAFAF8' },
 
   header: {
     paddingTop: 64,

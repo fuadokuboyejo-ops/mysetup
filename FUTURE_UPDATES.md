@@ -11,6 +11,21 @@ Planned features and improvements for mysetup.
 
 ---
 
+## AI Advice
+
+- **AI setup advice** — AI reviews a user's board/gear and gives tailored suggestions (upgrades, missing pieces, ergonomics, cable management, value-for-money)
+- **Contextual tips** — advice aware of setup type (gaming rig vs home lab vs laptop workspace) and the user's budget
+- **Ask the AI** — let users ask questions about their setup and get gear-specific answers
+
+---
+
+## Favourites
+
+- **Add setups to favourites** — let users favourite/save setups (their own and others') so they can find them again quickly
+- **Favourites view** — a dedicated place on the profile (or a Collections tab) that lists all favourited setups
+
+---
+
 ## Affiliate Links for Creators
 
 - **Affiliate links on items** — let creators attach buy links (Amazon, Best Buy, etc.) to products on their setup board
@@ -41,6 +56,40 @@ Planned features and improvements for mysetup.
 - **Community-built** — items scanned by users feed back into the catalog, growing it over time (deduped, moderated)
 - **Canonical specs & images** — one clean record per product with a standard cutout, so boards look consistent
 - Ties into Price Finding and Affiliate Links — catalog entries carry pricing and buy links
+
+---
+
+## Songs with Photos
+
+- **Add a song to a setup** — let users attach a track to a setup photo/post, so it plays while others view it (like a soundtrack for your battlestation)
+- **Music picker** — search and pick a song (or a short clip) when composing a post
+- **Plays on view** — the song plays softly when a setup opens in the feed or post detail, with a mute toggle
+- **Now-playing chip** — show the track title + artist on the photo, tappable to open the source
+- **Streaming links** — deep-link to the full track on Spotify / Apple Music
+- Needs licensed music integration or user-provided clips, plus audio playback (expo-audio)
+
+---
+
+## Spec Items for PCs & Servers
+
+- **Component-level specs** — let a PC or Server entry hold its full parts list, not just one photo: CPU, GPU, motherboard, RAM, storage, PSU, cooling, case (and for servers: form factor, drive bays, network, OS/role)
+- **Add each component** — build the machine by adding parts individually (scan, search the catalog, or manual), each with its own brand/model/spec
+- **Spec sheet view** — tap a PC/Server to see a clean, itemized spec sheet of every component
+- **Auto-fill from catalog** — pull canonical specs when a component is picked from the Item Catalog
+- **Total cost & wattage** — sum component prices (via Price Finding) and estimate power draw
+- **Compatibility hints** — flag obvious mismatches (socket, RAM type, PSU headroom) as a stretch goal
+- Ties into the Item Catalog and Price Finding — components resolve to catalog entries with prices and buy links
+
+---
+
+## Server Graph Boards
+
+- **Rack-style board** — instead of the desk grid, servers stack as rack units (1U/2U/4U) in a rack frame, sized to each unit's form factor
+- **Topology graph** — show how gear connects: router → switch → servers → NAS/storage, drawn as a node graph with links
+- **Connection lines** — draw cables/links between nodes (network, power) so a homelab reads as a real network map
+- **Rack + graph toggle** — switch between the physical rack view and the logical topology view of the same setup
+- **Auto-layout** — infer sensible rack order / graph links from item categories (network, server, storage, power)
+- Fits the Server setup type from the Setup Boards plan; pairs with per-type boards
 
 ---
 

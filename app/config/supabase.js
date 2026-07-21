@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
+import { AppState, Platform } from 'react-native';
+import { createClient, processLock } from '@supabase/supabase-js';
 
 // Credentials come from EXPO_PUBLIC_* env vars (see .env / .env.example). The
 // anon key is safe to ship in the client — row-level security in Postgres is
@@ -29,5 +30,15 @@ export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
     // PKCE: the OAuth redirect comes back with a ?code= that we exchange for a
     // session. The client stashes the code_verifier in AsyncStorage for us.
     flowType: 'pkce',
+    lock: processLock,
   },
 });
+
+// Keep token refresh active only while the native app is in the foreground.
+// Web handles this automatically in the Supabase client.
+if (Platform.OS !== 'web') {
+  AppState.addEventListener('change', state => {
+    if (state === 'active') supabase.auth.startAutoRefresh();
+    else supabase.auth.stopAutoRefresh();
+  });
+}

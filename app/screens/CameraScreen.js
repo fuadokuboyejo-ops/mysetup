@@ -5,6 +5,8 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Accelerometer } from 'expo-sensors';
+import TutorialOverlay, { useTutorialTarget } from '../components/TutorialOverlay';
+import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial } from '../config/tutorial';
 
 const OUTLINE_SIZES = {
   landscape: { width: '82%', height: '38%' },
@@ -27,6 +29,11 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
   // Preview aspect (width/height) — lets the server map the on-screen green guide
   // through the camera's cover-fit crop to the actual recorded video pixels.
   const previewAspectRef = useRef(null);
+  // First-run tutorial, step 3: Emo spotlights the shutter. Never during the
+  // live-photo flow, and only once the camera is actually usable.
+  const shutterStep = useTutorialStep('camera-shutter');
+  const tutorialActive = shutterStep.active && !livePhotoMode;
+  const shutterTarget = useTutorialTarget(tutorialActive && cameraReady);
 
   // Reset still when the component enters live photo mode fresh
   useEffect(() => {
@@ -88,6 +95,7 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
         stillBase64Ref.current = photo.base64;
         setLiveStep('video');
       } else {
+        advanceTutorial('camera-shutter'); // the step waits for a real capture
         onPhotoTaken(photo.uri, photo.base64);
       }
     } catch (e) {
@@ -125,6 +133,7 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
       allowsEditing: false,
     });
     if (!result.canceled && result.assets[0]) {
+      advanceTutorial('camera-shutter'); // gallery counts too — they got a photo
       onPhotoTaken(result.assets[0].uri, result.assets[0].base64);
     }
   };
@@ -241,6 +250,8 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
+              ref={shutterTarget.ref}
+              onLayout={shutterTarget.onLayout}
               style={[styles.shutterButton, capturing && styles.shutterDisabled]}
               onPress={takePhoto}
               disabled={capturing}
@@ -255,6 +266,15 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
         </View>
         </View>
       </View>
+
+      {tutorialActive && (
+        <TutorialOverlay
+          steps={TUTORIAL_STEPS}
+          stepIndex={shutterStep.stepIndex}
+          targetRect={shutterTarget.rect}
+          onSkip={skipTutorial}
+        />
+      )}
     </View>
   );
 }

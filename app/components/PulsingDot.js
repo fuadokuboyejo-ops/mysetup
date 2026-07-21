@@ -4,32 +4,33 @@ import { Animated, Pressable, Easing, StyleSheet } from 'react-native';
 // An Instagram-style photo tag: a small white dot pinned on a piece of gear,
 // with a slow "breathing" halo that signals it's tappable without being noisy.
 //
-// React Native can't animate box-shadow the way the CSS spec does, so the halo
-// is a separate Animated.View behind the dot that scales up + fades out (native
-// driver, so it stays smooth). The dot itself never resizes — only the halo —
-// keeping the tap target stable. Press scales the dot to 0.85 for tactile feel.
+// React Native can't animate box-shadow spread directly, so two native-driven
+// layers expand behind the dot: a soft fill plus a crisp ring. The dot itself
+// stays stable, while press scales it to 0.85 for tactile feedback.
 //
-// Spec: 16px white dot, 2px dark border; halo 3px@20% → 8px@5%; 2.4s ease-in-out
-// loop; dots staggered by index * 0.5s so they never peak in sync (ambient
+// The 16px white dot stays fixed while its halo reaches roughly 36px. The 2.4s
+// loop is staggered by index * 0.5s so dots never peak in sync (ambient
 // "breathing", not a synchronized strobe).
 
 const DOT = 16;
 const CYCLE = 2400;          // ms — deliberate; below ~2s feels anxious, above ~3s stops reading as interactive
 const STAGGER = 500;         // ms between each dot's phase
 
-export default function PulsingDot({ x, y, index = 0, selected = false, onPress }) {
-  const pulse = useRef(new Animated.Value(0)).current;   // 0 → 1 → 0, drives the halo
-  const press = useRef(new Animated.Value(0)).current;   // 0 → 1 on press-in
+function useTagPulse(index) {
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // JS-driven (not native): these dots render inside <Modal>s (post composer,
-    // post detail), and on Android the native animation driver frequently fails
-    // to run inside a Modal's separate window. A few small dots on the JS thread
-    // is cheap, and it runs reliably everywhere.
+    pulse.setValue(0);
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: CYCLE / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.timing(pulse, { toValue: 0, duration: CYCLE / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulse, {
+          toValue: 1, duration: CYCLE / 2, easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true, isInteraction: false,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0, duration: CYCLE / 2, easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true, isInteraction: false,
+        }),
       ]),
     );
     // Offset each dot's phase. Modulo keeps the initial wait under one cycle even
@@ -39,22 +40,53 @@ export default function PulsingDot({ x, y, index = 0, selected = false, onPress 
     return () => { clearTimeout(timer); loop.stop(); };
   }, [index, pulse]);
 
-  // Halo grows from a tight ring to a wide one while fading. Opacity range is
-  // boosted above the CSS spec's 0.2/0.05 because a white halo that faint is
-  // nearly invisible over a photo on-device.
-  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1.375, 2.4] });
-  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.08] });
+  return pulse;
+}
+
+// Exported so edit-mode drag handles can use the exact same ambient pulse.
+export function TagPulseHalo({ index = 0, selected = false }) {
+  const pulse = useTagPulse(index);
+  // Let the pulse travel well beyond the dot so it remains obvious over busy
+  // photos. The 16px tag itself stays fixed; only these decorative layers grow.
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1.2, 1.9] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.72, 0.06] });
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1.05, 2.25] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.75, 1], outputRange: [0.8, 0.35, 0] });
+
+  return (
+    <Animated.View pointerEvents="none" style={styles.haloAnchor}>
+      <Animated.View
+        style={[
+          styles.haloFill,
+          selected && styles.haloFillSelected,
+          { opacity: haloOpacity, transform: [{ scale: haloScale }] },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.haloRing,
+          selected && styles.haloRingSelected,
+          { opacity: ringOpacity, transform: [{ scale: ringScale }] },
+        ]}
+      />
+    </Animated.View>
+  );
+}
+
+export default function PulsingDot({ x, y, index = 0, selected = false, onPress }) {
+  const press = useRef(new Animated.Value(0)).current;   // 0 → 1 on press-in
+
   const dotScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] });
 
   return (
     <Pressable
       style={[styles.wrap, { left: `${x}%`, top: `${y}%` }]}
       onPress={onPress}
-      onPressIn={() => Animated.timing(press, { toValue: 1, duration: 120, useNativeDriver: false }).start()}
-      onPressOut={() => Animated.timing(press, { toValue: 0, duration: 120, useNativeDriver: false }).start()}
+      onPressIn={() => Animated.timing(press, { toValue: 1, duration: 120, useNativeDriver: true }).start()}
+      onPressOut={() => Animated.timing(press, { toValue: 0, duration: 120, useNativeDriver: true }).start()}
       hitSlop={12}
     >
-      <Animated.View style={[styles.halo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
+      <TagPulseHalo index={index} selected={selected} />
       <Animated.View style={[styles.dot, selected && styles.dotSelected, { transform: [{ scale: dotScale }] }]} />
     </Pressable>
   );
@@ -67,12 +99,25 @@ const styles = StyleSheet.create({
     marginLeft: -DOT / 2, marginTop: -DOT / 2,
     alignItems: 'center', justifyContent: 'center',
   },
-  // The expanding/fading breathing ring behind the dot (a translucent white disc).
-  halo: {
-    ...StyleSheet.absoluteFillObject,
+  haloAnchor: {
+    position: 'absolute', width: DOT, height: DOT, left: 0, top: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  haloFill: {
+    position: 'absolute', width: DOT, height: DOT, left: 0, top: 0,
     borderRadius: DOT / 2,
     backgroundColor: '#ffffff',
+    transformOrigin: 'center',
   },
+  haloFillSelected: { backgroundColor: '#8fb8f0' },
+  haloRing: {
+    position: 'absolute', width: DOT, height: DOT, left: 0, top: 0,
+    borderRadius: DOT / 2,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+    transformOrigin: 'center',
+  },
+  haloRingSelected: { borderColor: '#8fb8f0' },
   dot: {
     width: DOT, height: DOT, borderRadius: DOT / 2,
     backgroundColor: '#ffffff',

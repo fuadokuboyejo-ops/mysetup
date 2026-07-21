@@ -1,10 +1,11 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Image } from 'expo-image';
+import { imageUri } from '../config/media';
 
-// Light product card for a photo tag: gear thumbnail, name, "View comments".
+// Light product card for a photo tag: gear thumbnail, name, and a product link.
 // Two layouts: floating (anchored beside a tapped dot) or `inline` (a normal
 // block, e.g. shown under the board). Shared by the composer and post detail.
-export default function DotCard({ item, dot, onClose, onViewComments, inline }) {
+export default function DotCard({ item, dot, onClose, onViewProduct, inline }) {
   if (!item || (!inline && !dot)) return null;
 
   // Anchor to whichever side of the dot has more room (floating layout only).
@@ -21,16 +22,16 @@ export default function DotCard({ item, dot, onClose, onViewComments, inline }) 
   const p = item.product || {};
   const title = p.product_name || p.category || 'Item';
 
-  const viewComments = () => {
-    if (onViewComments) onViewComments(item);
-    else Alert.alert('Coming soon', 'Comments are on the way.');
+  const viewProduct = () => {
+    if (onViewProduct) onViewProduct(item);
+    else Alert.alert('Product details', 'Open this product from your gear library to view its full details.');
   };
 
   return (
     <View style={posStyle}>
       <View style={[styles.thumb, inline && styles.thumbBig]}>
         {item.photoBase64 ? (
-          <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.thumbImg} contentFit="contain" />
+          <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={styles.thumbImg} contentFit="contain" />
         ) : (
           <Text style={styles.thumbLabel} numberOfLines={1}>{(p.category || 'gear').toLowerCase()}</Text>
         )}
@@ -38,9 +39,9 @@ export default function DotCard({ item, dot, onClose, onViewComments, inline }) 
 
       <View style={styles.info}>
         <Text style={[styles.title, inline && styles.titleBig]} numberOfLines={2}>{title}</Text>
-        <TouchableOpacity style={[styles.viewBtn, inline && styles.viewBtnBig]} onPress={viewComments} activeOpacity={0.8}>
-          <Text style={[styles.viewIcon, inline && styles.viewIconBig]}>⌁</Text>
-          <Text style={[styles.viewText, inline && styles.viewTextBig]}>View comments</Text>
+        <TouchableOpacity style={[styles.viewBtn, inline && styles.viewBtnBig]} onPress={viewProduct} activeOpacity={0.8}>
+          <Text style={[styles.viewIcon, inline && styles.viewIconBig]}>›</Text>
+          <Text style={[styles.viewText, inline && styles.viewTextBig]}>View product details</Text>
         </TouchableOpacity>
       </View>
 
@@ -53,7 +54,7 @@ export default function DotCard({ item, dot, onClose, onViewComments, inline }) 
 
 const styles = StyleSheet.create({
   card: {
-    position: 'absolute', width: '52%',
+    position: 'absolute', width: '58%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12, borderWidth: 1, borderColor: '#ECECEC',
     flexDirection: 'row', alignItems: 'center', padding: 7, gap: 8,
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5, paddingHorizontal: 9,
   },
   viewIcon: { color: '#161616', fontSize: 10, fontWeight: '700' },
-  viewText: { color: '#161616', fontSize: 11, fontWeight: '700' },
+  viewText: { color: '#161616', fontSize: 10, fontWeight: '700' },
   close: {
     position: 'absolute', top: 5, right: 5,
     width: 18, height: 18, borderRadius: 9,

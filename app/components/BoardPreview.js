@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { computeLayout, normalizeNodes } from '../config/boardLayout';
+import { imageUri } from '../config/media';
 
 // Renders a setup's actual board — the arranged node layout with each slot's
 // gear photo — scaled to whatever width it's given. Shared by the post composer
@@ -38,7 +39,7 @@ export default function BoardPreview({ setup, items, style, onItemPress }) {
           >
             {photo && (
               <Image
-                source={{ uri: `data:image/png;base64,${photo}` }}
+                source={{ uri: imageUri(photo, 'image/png') }}
                 style={styles.slotImage}
                 contentFit="contain"
               />

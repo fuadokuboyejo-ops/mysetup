@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { normalizeNodes, computeLayout, nodeSpan, getVisualScale } from '../config/boardLayout';
 import { getAllItems, getSetups } from '../config/setup';
+import { imageUri } from '../config/media';
 
 export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, onBack, onEditBoard, onArrangeBoard, onContinue }) {
   const [boardWidth, setBoardWidth] = useState(0);
@@ -141,7 +142,7 @@ export default function RevampCameraRollScreen({ photo, setup, onPhotoChange, on
                           const visualScale = getVisualScale(item);
                           return (
                             <Image
-                              source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+                              source={{ uri: imageUri(item.photoBase64, 'image/png') }}
                               style={[
                                 styles.boardItemImage,
                                 {

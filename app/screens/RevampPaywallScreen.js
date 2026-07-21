@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, StatusBar, Alert, ActivityIndicator, Animated, Platform, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet, StatusBar, Alert, ActivityIndicator, Animated, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { setIsPremium } from '../config/setup';
-
-const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 
 const MASCOT_INTRO = require('../assets/paywall.gif');
 const MASCOT_LOOP = require('../assets/paywall_loop.gif');
@@ -170,7 +168,6 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
             <View style={styles.thanksBadge}>
               <Text style={styles.thanksBadgeText}>✓  SUBSCRIPTION ACTIVE</Text>
             </View>
-            <Text style={styles.thanksTitle}>Thanks for buying!</Text>
           </Animated.View>
           <Animated.View style={[styles.celebrateCtaWrap, { opacity: thanksOpacity }]}>
             <TouchableOpacity style={styles.cta} onPress={onUnlock} activeOpacity={0.85}>
@@ -374,9 +371,5 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
   },
   thanksBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
-  thanksTitle: {
-    color: '#fff', fontFamily: serif, fontSize: 32, fontWeight: '600', textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10,
-  },
   celebrateCtaWrap: { width: '100%' },
 });

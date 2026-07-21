@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, SafeAreaView, Modal,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Modal,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import SetupPostScreen from './SetupPostScreen';
 import CreatorProfileScreen from './CreatorProfileScreen';
 import BoardPreview from '../components/BoardPreview';
+import TutorialOverlay, { useTutorialTarget } from '../components/TutorialOverlay';
+import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial } from '../config/tutorial';
 import { getPosts, getSetups, getAllItems } from '../config/setup';
+import { getProfileMedia } from '../config/profile';
+import { supabase } from '../config/supabase';
+import { imageUri } from '../config/media';
 
 // `gradient` stands in for each user's real setup photo until posts carry an
 // actual photo_path — same warm dusk-toned look as the reference mockup.
@@ -86,6 +91,12 @@ const MOCK_CREATORS = {
       { id: '1b', name: 'work corner', likes: 88, gradient: ['#3E5240', '#6B7A4E', '#8C935A'] },
       { id: '1c', name: 'old setup', likes: 203, gradient: ['#3A4152', '#4E5D6E', '#5E6B72'] },
     ],
+    items: [
+      { id: 'ji1', product: { product_name: 'Keychron Q1', category: 'keyboard' }, gradient: ['#3A4152', '#5E6B72'] },
+      { id: 'ji2', product: { product_name: 'LG 34" Ultrawide', category: 'monitor' }, gradient: ['#4A4368', '#8B5A56'] },
+      { id: 'ji3', product: { product_name: 'Logitech MX Master 3', category: 'mouse' }, gradient: ['#3E5240', '#8C935A'] },
+      { id: 'ji4', product: { product_name: 'Grovemade Walnut Mat', category: 'deskmat' }, gradient: ['#6B5A44', '#C08552'] },
+    ],
   },
   sookie: {
     username: 'sookie', initials: 'SK', isPrivate: true,
@@ -119,7 +130,10 @@ const MOCK_CREATORS = {
 
 const TABS = ['Trending', 'Following', 'New'];
 
-function Avatar({ initials }) {
+function Avatar({ initials, uri }) {
+  if (uri) {
+    return <Image source={{ uri }} style={styles.avatar} contentFit="cover" />;
+  }
   return (
     <View style={styles.avatar}>
       <Text style={styles.avatarText}>{initials}</Text>
@@ -153,12 +167,12 @@ export function MiniBoard({ slots }) {
   );
 }
 
-function SetupCard({ setup, onPress }) {
+function SetupCard({ setup, onPress, avatarUri }) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
       {/* User row */}
       <View style={styles.cardHeader}>
-        <Avatar initials={setup.initials} />
+        <Avatar initials={setup.initials} uri={avatarUri} />
         <Text style={styles.cardUsername}>{setup.username}</Text>
       </View>
 
@@ -166,7 +180,7 @@ function SetupCard({ setup, onPress }) {
       <View style={styles.photoWrap}>
         {setup.photo ? (
           <Image
-            source={{ uri: `data:image/jpeg;base64,${setup.photo}` }}
+            source={{ uri: imageUri(setup.photo) }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
           />
@@ -247,31 +261,65 @@ function creatorFromPost(post) {
   };
 }
 
-export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
+export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearch }) {
   const [activeTab, setActiveTab] = useState('Trending');
   const [openedPost, setOpenedPost] = useState(null);
   const [viewedCreator, setViewedCreator] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
+  const [authUser, setAuthUser] = useState(null);
+  const [profileMedia, setProfileMedia] = useState({});
+  // First-run tutorial, step 1: Emo spotlights the add-a-photo button.
+  const addStep = useTutorialStep('home-add');
+  const addTarget = useTutorialTarget(addStep.active);
+  // Near the end of the tutorial: after the cutout flies into the Profile tab,
+  // spotlight it and wait for the user to open their profile.
+  const profileStep = useTutorialStep('profile-tab');
+  const profileTarget = useTutorialTarget(profileStep.active);
 
-  // Load the user's published posts and hydrate each with its setup photo
-  // (kept out of the stored post to stay under AsyncStorage's row cap). Runs on
-  // mount — HomeScreen remounts whenever you navigate back to it, so a setup
-  // posted elsewhere shows up as soon as you return to the feed.
+  // The signed-in user's avatar, shown on their own posts in the feed.
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) setAuthUser(data.session?.user || null);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setAuthUser(session?.user || null);
+    });
+    return () => { active = false; authListener.subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getProfileMedia(authUser).then(media => { if (active) setProfileMedia(media); });
+    return () => { active = false; };
+  }, [authUser]);
+
+  const myAvatarUri = profileMedia.avatarBase64
+    ? imageUri(profileMedia.avatarBase64)
+    : profileMedia.avatarUrl
+      || authUser?.user_metadata?.avatar_url
+      || authUser?.user_metadata?.picture
+      || null;
+
+  // Load published posts and hydrate each with its Supabase-backed setup media.
+  // HomeScreen remounts whenever you navigate back, so newly posted setups show
+  // up as soon as the user returns to the feed.
   useEffect(() => {
     (async () => {
       const [posts, setups, allItems] = await Promise.all([getPosts(), getSetups(), getAllItems()]);
       const hydrated = posts.map(p => {
-        const setup = setups.find(s => s.id === p.setupId);
+        const setup = setups.find(s => s.id === p.setupId) || p.boardSetup;
         return {
           ...p,
-          photo: setup?.photo,
+          photo: setup?.photo || p.photo,
           // Live tags from the setup (not the post-time snapshot) so re-tagging
           // the setup updates the post too, and both views stay in sync.
           dots: setup?.dots ?? p.dots,
+          extraPhotos: setup?.extraPhotos ?? p.extraPhotos ?? [],
           // The real arranged board + the gear library, so the feed card can
           // render the actual board the user posted (not the placeholder grid).
           boardSetup: setup,
-          boardItems: allItems,
+          boardItems: p.boardItems?.length ? p.boardItems : allItems,
         };
       });
       setUserPosts(hydrated);
@@ -280,14 +328,14 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} translucent={false} />
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
 
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logo}>my setup</Text>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.headerIcon}>
+            <TouchableOpacity style={styles.headerIcon} onPress={onSearch}>
               <Text style={styles.headerIconText}>⌕</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerIcon}>
@@ -318,7 +366,12 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
           showsVerticalScrollIndicator={false}
         >
           {[...userPosts, ...MOCK_SETUPS].map(setup => (
-            <SetupCard key={setup.id} setup={setup} onPress={() => setOpenedPost(setup)} />
+            <SetupCard
+              key={setup.id}
+              setup={setup}
+              avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
+              onPress={() => setOpenedPost(setup)}
+            />
           ))}
         </ScrollView>
 
@@ -359,22 +412,64 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp }) {
           <Text style={[styles.navIcon, styles.navIconActive]}>⌂</Text>
           <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity style={styles.navItem} onPress={onSearch}>
           <Text style={styles.navIcon}>⌕</Text>
           <Text style={styles.navLabel}>Search</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navScanBtn} onPress={onStartScan}>
+        <TouchableOpacity
+          ref={addTarget.ref}
+          onLayout={addTarget.onLayout}
+          style={styles.navScanBtn}
+          onPress={() => {
+            if (addStep.active) advanceTutorial('home-add');
+            onStartScan();
+          }}
+        >
           <Text style={styles.navScanIcon}>⊕</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={onRevamp}>
           <Text style={styles.navIcon}>✨</Text>
           <Text style={styles.navLabel}>Revamp</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={onViewSetup}>
+        <TouchableOpacity
+          ref={profileTarget.ref}
+          onLayout={profileTarget.onLayout}
+          style={styles.navItem}
+          onPress={() => {
+            if (profileStep.active) advanceTutorial('profile-tab');
+            onViewSetup();
+          }}
+        >
           <Text style={styles.navIcon}>⊙</Text>
           <Text style={styles.navLabel}>Profile</Text>
         </TouchableOpacity>
       </View>
+
+      {/* First-run tutorial, step 1 — the white stage and matching tutorial nav
+          sit over Home until the highlighted add button is tapped. */}
+      {addStep.active && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={addStep.stepIndex}
+          targetRect={addTarget.rect}
+          onTargetPress={() => { advanceTutorial('home-add'); onStartScan(); }}
+          onSkip={skipTutorial}
+        />
+      )}
+
+      {/* Tutorial: spotlight the Profile tab once the saved cutout has flown
+          into it — tapping through opens the profile and finishes the tour. */}
+      {profileStep.active && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={profileStep.stepIndex}
+          targetRect={profileTarget.rect}
+          onTargetPress={() => { advanceTutorial('profile-tab'); onViewSetup(); }}
+          onSkip={skipTutorial}
+        />
+      )}
     </View>
   );
 }

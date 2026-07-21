@@ -19,6 +19,37 @@ Immediate priorities for the next development push.
 
 ---
 
+## July 17, 2026
+
+- [ ] Add photos to a post — let users attach one or more extra photos to a post (beyond the main setup shot), shown in the post detail
+- [ ] Item catalog search engine — search a piece of gear and have pre-made catalog items appear to add to the board (Best Buy API to start, seeded with the PCPartPicker dataset; reuse `/api/remove-bg` for clean cutouts). Feeds price finding + affiliate links.
+- [ ] AI Revamp — style & background controls — let the user pick the **style** they want the generated image in (e.g. minimal, RGB gaming, cozy, cyberpunk) and choose the exact **background** they want. Support presets (e.g. bedroom, studio, plain wall, neon city), a custom background description, and eventually a reference photo; pass the choice into the revamp prompt while keeping the user's setup and gear intact.
+
+---
+
+## July 18, 2026
+
+- [ ] Tutorial — a first-run, walkthrough that guides new users through the core flow: scan/add gear, arrange the board, tag items on the photo, post to the feed, and try AI Revamp. Skippable, and replayable from settings/profile.
+- [ ] Estimated setup value — show approximately how much a user's complete board/setup is worth by totaling the best available price for each placed item. Prefer the user's entered purchase price, fall back to a verified current product price, label the result as an estimate, show the currency and last-updated time, and never invent prices for unmatched products.
+- [ ] Item comments — add a comment/community-advice section to each product detail page so users can ask questions, share ownership tips, reply, like helpful comments, and report inappropriate content.
+
+---
+
+## July 19, 2026
+
+- [ ] Redesign other users' profile view — make public profiles match the owner's profile layout and display that user's saved profile picture, banner, username, bio, public items, and public setups. Opening a creator from the feed, search, comments, or a setup should always lead to this same profile screen. Keep private setups and library-only items hidden, and do not show edit controls when viewing someone else's profile.
+
+---
+
+## July 20, 2026
+
+- [ ] Community profile page — build out the profile into a social hub:
+  - **Community feedback** — let other users leave feedback/comments on a profile and its setups; surface a feed of recent activity (new comments, likes, mentions) on the profile.
+  - **Following & followers** — full follow system: follow/unfollow from any profile, follower and following counts that link to browsable lists, and a "follows you" indicator. Gate private accounts behind a follow request.
+  - **Comment history** — a per-user history of the comments they've posted (on items, setups, and other profiles), visible on their profile, with links back to the original context and the ability to edit/delete their own.
+
+---
+
 ## Setup Boards
 
 Create unique board layouts for each setup type — each type has different slots that reflect the gear that belongs in that space.

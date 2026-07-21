@@ -3,9 +3,8 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, SafeAreaView,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import * as FileSystem from 'expo-file-system/legacy';
 import { updateSetupWallpaper, addSetupItem } from '../config/setup';
-import { API_BASE } from '../config/api';
+import { supabase } from '../config/supabase';
 
 const MONITOR_PRODUCT = {
   category: 'monitor',
@@ -50,15 +49,10 @@ export default function LivePhotoPreviewScreen({ videoUri, photoBase64, cropMeta
       setStatusText('Removing background…');
       let itemImage = photoBase64;
       try {
-        const res = await fetch(`${API_BASE}/api/remove-bg`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photo: photoBase64 }),
+        const { data, error } = await supabase.functions.invoke('remove-bg', {
+          body: { photo: photoBase64 },
         });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.image) itemImage = data.image;
-        }
+        if (!error && data?.image) itemImage = data.image;
       } catch {
         // keep the raw still
       }
@@ -67,33 +61,10 @@ export default function LivePhotoPreviewScreen({ videoUri, photoBase64, cropMeta
       setStatusText('Adding to setup…');
       await addSetupItem(setupId || 'default', MONITOR_PRODUCT, itemImage);
 
-      // 3. Remove background from video via server (XHR supports { uri } FormData parts natively)
-      setStatusText('Removing video background…');
-      const { video_url } = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        const form = new FormData();
-        form.append('video', { uri: videoUri, type: 'video/mp4', name: 'wallpaper.mp4' });
-        // Preview aspect lets the server crop exactly to the green guide box.
-        if (cropMeta?.previewAspect) form.append('previewAspect', String(cropMeta.previewAspect));
-        xhr.open('POST', `${API_BASE}/api/remove-bg-video`);
-        xhr.onload = () => {
-          try {
-            const body = JSON.parse(xhr.responseText);
-            if (xhr.status === 200) resolve(body);
-            else reject(new Error(`Video background removal failed: ${body.error || xhr.status}`));
-          } catch {
-            reject(new Error(`Video background removal failed: ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Network error uploading video'));
-        xhr.send(form);
-      });
-
-      // 4. Download processed video and save as wallpaper
+      // 3. Persist the video in Supabase Storage. Live-video background
+      // processing is intentionally not routed through a second backend.
       setStatusText('Saving live wallpaper…');
-      const dest = FileSystem.documentDirectory + `wallpaper_${Date.now()}.mp4`;
-      await FileSystem.downloadAsync(video_url, dest);
-      await updateSetupWallpaper(setupId || 'default', dest);
+      await updateSetupWallpaper(setupId || 'default', videoUri);
 
       onSave();
     } catch (e) {

@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet, Alert,
-  TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal,
+  TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal, StatusBar,
 } from 'react-native';
+import { supabase } from '../config/supabase';
+import LoadingScreen from '../components/LoadingScreen';
+import { TutorialMultiSpotlight } from '../components/TutorialOverlay';
+import { TUTORIAL_STEPS, useTutorialStep, skipTutorial } from '../config/tutorial';
 
 const mono = Platform.select({ ios: 'Courier New', android: 'monospace', default: 'monospace' });
 const BARCODE_BARS = [3, 1, 2, 4, 1, 3, 1, 1, 2, 3, 1, 4, 2, 1, 3, 1, 2, 1, 4, 1, 2, 3, 1, 1, 3, 2, 4, 1, 2, 1, 3, 1, 2, 4, 1, 1, 2, 3, 1, 2];
@@ -193,6 +197,35 @@ const CATEGORY_CONFIG = {
   },
 };
 
+// Every receipt gets a PRICE line so items carry what they cost. Injected into
+// each category's fields + folded into its product, so we don't repeat it 9×.
+const PRICE_FIELD = {
+  key: 'price', label: 'PRICE', required: true, placeholder: '$199',
+  prefix: '$', keyboardType: 'numbers-and-punctuation',
+  chips: ['50', '100', '150', '250', '500'], chipPrefix: '$',
+};
+
+function parsePrice(value) {
+  const n = parseFloat(String(value || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+Object.values(CATEGORY_CONFIG).forEach(cfg => {
+  cfg.fields = [...cfg.fields, PRICE_FIELD];
+  const buildBase = cfg.buildProduct;
+  cfg.buildProduct = (values) => {
+    const product = buildBase(values);
+    const price = parsePrice(values.price);
+    if (price != null) {
+      product.price = price;
+      product.currency = 'USD';
+      product.price_source = 'manual';
+      product.price_updated_at = new Date().toISOString();
+    }
+    return product;
+  };
+});
+
 function clean(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -224,16 +257,121 @@ function baseProduct(name, brand, category) {
   };
 }
 
-export default function GearReceiptScreen({ photoUri, productType, onResults, onBack }) {
+export default function GearReceiptScreen({ photoUri, photoBase64, productType, onResults, onBack }) {
   const config = CATEGORY_CONFIG[productType] || CATEGORY_CONFIG.other;
   const previewSource = photoUri ? { uri: photoUri } : (CATEGORY_IMAGES[productType] || CATEGORY_IMAGES.other);
   const [values, setValues] = useState({});
   const [showSavedReceipt, setShowSavedReceipt] = useState(false);
+  const [scanStatus, setScanStatus] = useState(photoBase64 ? 'loading' : 'idle');
+  const [scanError, setScanError] = useState('');
+  const [scanAttempt, setScanAttempt] = useState(0);
   const [itemNo] = useState(() => String(1000 + Math.floor(Math.random() * 9000)));
+  // First-run tutorial, step 4: highlight the whole fields block + save button.
+  // The overlay is visual-only, so every real TextInput remains directly usable.
+  const receiptStep = useTutorialStep('receipt-save');
+  const tutorialNodes = useRef(new Map());
+  const tutorialMeasureQueued = useRef(false);
+  const [tutorialRects, setTutorialRects] = useState([]);
+  // Once the user starts filling the receipt the guidance has done its job —
+  // drop the highlight so nothing competes with the keyboard and typing.
+  const [receiptTouched, setReceiptTouched] = useState(false);
+  const markReceiptTouched = useCallback(() => setReceiptTouched(true), []);
+
+  const registerTutorialNode = useCallback((key, node) => {
+    if (node) tutorialNodes.current.set(key, node);
+    else tutorialNodes.current.delete(key);
+  }, []);
+
+  const measureTutorialTargets = useCallback(() => {
+    if (!receiptStep.active || tutorialMeasureQueued.current) return;
+    tutorialMeasureQueued.current = true;
+    requestAnimationFrame(() => {
+      tutorialMeasureQueued.current = false;
+      const entries = [...tutorialNodes.current.entries()].filter(([, node]) => node?.measureInWindow);
+      if (!entries.length) {
+        setTutorialRects([]);
+        return;
+      }
+      const measured = [];
+      let remaining = entries.length;
+      entries.forEach(([key, node]) => {
+        node.measureInWindow((x, y, width, height) => {
+          if (width > 0 && height > 0) measured.push({ key, x, y, width, height });
+          remaining -= 1;
+          if (remaining === 0) setTutorialRects(measured);
+        });
+      });
+    });
+  }, [receiptStep.active]);
+
+  useEffect(() => {
+    if (!receiptStep.active) {
+      setTutorialRects([]);
+      return undefined;
+    }
+    const firstMeasure = setTimeout(measureTutorialTargets, 250);
+    const settledMeasure = setTimeout(measureTutorialTargets, 900);
+    return () => {
+      clearTimeout(firstMeasure);
+      clearTimeout(settledMeasure);
+    };
+  }, [measureTutorialTargets, receiptStep.active, scanStatus]);
+
+  useEffect(() => {
+    if (!photoBase64) return undefined;
+
+    let cancelled = false;
+    const prefillReceipt = async () => {
+      setScanStatus('loading');
+      setScanError('');
+      try {
+        const { data, error } = await supabase.functions.invoke('scan', {
+          body: { photo: photoBase64, productType },
+        });
+        if (cancelled) return;
+        if (error) {
+          let details = '';
+          try {
+            const errorBody = await error.context?.json?.();
+            details = errorBody?.details || errorBody?.error || '';
+          } catch {
+            // Some network/platform errors do not include a JSON response body.
+          }
+          throw new Error(details || error.message || 'Scan request failed');
+        }
+        if (data?.error) throw new Error(data.details || data.error);
+
+        const allowedKeys = new Set(config.fields.map(field => field.key));
+        const suggestions = Object.entries(data.fields || {}).filter(
+          ([key, value]) => allowedKeys.has(key) && clean(String(value || '')),
+        );
+
+        setValues(current => {
+          const next = { ...current };
+          suggestions.forEach(([key, value]) => {
+            // A user may begin typing while the request is running. Never replace
+            // a value they already entered with an AI suggestion.
+            if (!clean(current[key])) next[key] = clean(String(value));
+          });
+          return next;
+        });
+        setScanStatus(suggestions.length ? 'success' : 'empty');
+      } catch (error) {
+        if (!cancelled) {
+          setScanError(error instanceof Error ? error.message : 'Scan request failed');
+          setScanStatus('error');
+        }
+      }
+    };
+
+    prefillReceipt();
+    return () => { cancelled = true; };
+  }, [config, photoBase64, productType, scanAttempt]);
 
   const updateValue = (key, value) => setValues(previous => ({ ...previous, [key]: value }));
 
   const toggleChip = (field, value) => {
+    markReceiptTouched(); // chips fill fields too — same signal as focusing one
     if (!field.multiple) {
       updateValue(field.key, values[field.key] === value ? '' : value);
       return;
@@ -252,6 +390,11 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
     }
     if (config.requireAny && !config.requireAny.some(key => clean(values[key]))) {
       Alert.alert('Add a component', 'Add at least a case, CPU, or GPU before saving.');
+      return false;
+    }
+    // `required` only checks the field isn't blank — make sure it's a real number.
+    if (parsePrice(values.price) == null) {
+      Alert.alert('Price needed', 'Enter a valid price (numbers only) before saving.');
       return false;
     }
     return true;
@@ -283,6 +426,10 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
         <DashedLine />
         <Text style={styles.rSection}>— SPECIFICATIONS —</Text>
 
+        <View
+          ref={!readOnly ? node => registerTutorialNode('fields', node) : undefined}
+          onLayout={!readOnly ? measureTutorialTargets : undefined}
+        >
         {config.fields.map((field, index) => {
           const { key: fieldKey, ...receiptRowProps } = field;
           return (
@@ -291,6 +438,7 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
                 {...receiptRowProps}
                 value={values[fieldKey] || ''}
                 onChangeText={value => updateValue(fieldKey, value)}
+                onFocus={readOnly ? undefined : markReceiptTouched}
                 readOnly={readOnly}
                 last={index === config.fields.length - 1}
               />
@@ -303,7 +451,7 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
                     return (
                       <QuickChip
                         key={value}
-                        label={`${value}${field.chipSuffix || ''}`}
+                        label={`${field.chipPrefix || ''}${value}${field.chipSuffix || ''}`}
                         selected={selected}
                         onPress={() => toggleChip(field, value)}
                       />
@@ -314,6 +462,7 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
             </View>
           );
         })}
+        </View>
 
         <DashedLine />
         <View style={styles.rMetaRow}>
@@ -332,6 +481,18 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
     </View>
   );
 
+  // Render the loader as the screen itself instead of opening it in a Modal.
+  // Native modals mount one frame later, which briefly exposed the empty
+  // receipt before the Mistral loading screen appeared.
+  if (scanStatus === 'loading') {
+    return (
+      <View style={styles.aiLoadingScreen}>
+        <StatusBar hidden />
+        <LoadingScreen style={styles.aiLoadingMedia} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
@@ -349,9 +510,35 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.receiptScroll}
+          onScroll={measureTutorialTargets}
+          scrollEventThrottle={80}
         >
+          {(scanStatus === 'empty' || scanStatus === 'error') && (
+            <View style={[styles.scanNotice, scanStatus === 'error' && styles.scanNoticeError]}>
+              <View style={styles.scanNoticeCopy}>
+                <Text style={styles.scanNoticeTitle}>
+                  {scanStatus === 'empty' && 'No reliable details found'}
+                  {scanStatus === 'error' && 'Could not auto-fill this receipt'}
+                </Text>
+                <Text style={styles.scanNoticeText}>
+                  {scanStatus === 'error' && scanError
+                    ? scanError
+                    : 'You can enter the details manually or try again.'}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.scanRetry} onPress={() => setScanAttempt(value => value + 1)}>
+                <Text style={styles.scanRetryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {renderReceipt(false)}
-          <TouchableOpacity style={styles.receiptSaveBtn} onPress={previewReceipt} activeOpacity={0.85}>
+          <TouchableOpacity
+            ref={node => registerTutorialNode('save', node)}
+            onLayout={measureTutorialTargets}
+            style={styles.receiptSaveBtn}
+            onPress={previewReceipt}
+            activeOpacity={0.85}
+          >
             <Text style={styles.receiptSaveText}>save to my setup</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -378,6 +565,16 @@ export default function GearReceiptScreen({ photoUri, productType, onResults, on
           </ScrollView>
         </View>
       </Modal>
+
+      {receiptStep.active && !receiptTouched && tutorialRects.length > 0 && (
+        <TutorialMultiSpotlight
+          steps={TUTORIAL_STEPS}
+          stepIndex={receiptStep.stepIndex}
+          targetRects={tutorialRects}
+          onSkip={skipTutorial}
+          toast={receiptStep.step?.text}
+        />
+      )}
     </View>
   );
 }
@@ -394,7 +591,7 @@ function QuickChip({ label, selected, onPress }) {
   );
 }
 
-function ReceiptRow({ label, optional, value, onChangeText, placeholder, suffix, last, readOnly, chips, chipSuffix, multiple, required, ...inputProps }) {
+function ReceiptRow({ label, optional, value, onChangeText, placeholder, prefix, suffix, last, readOnly, chips, chipSuffix, chipPrefix, multiple, required, ...inputProps }) {
   return (
     <View style={[styles.rRow, last && styles.rRowLast]}>
       <Text style={styles.rRowLabel}>
@@ -403,7 +600,7 @@ function ReceiptRow({ label, optional, value, onChangeText, placeholder, suffix,
       <View style={styles.rValueWrap}>
         {readOnly ? (
           <Text style={[styles.rInput, styles.rValueRO, !clean(value) && styles.rInputEmpty]} numberOfLines={1}>
-            {clean(value) ? `${value}${suffix ? ` ${suffix}` : ''}` : '—'}
+            {clean(value) ? `${prefix || ''}${value}${suffix ? ` ${suffix}` : ''}` : '—'}
           </Text>
         ) : (
           <>
@@ -461,6 +658,19 @@ const styles = StyleSheet.create({
   receiptAvoiding: { flex: 1, marginTop: -8 },
   receiptScroller: { flex: 1 },
   receiptScroll: { flexGrow: 1, paddingBottom: 40 },
+  scanNotice: {
+    marginHorizontal: 14, marginTop: 12, marginBottom: 10, paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: 14, backgroundColor: '#F2F0FF', flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: '#DDD8FF',
+  },
+  scanNoticeError: { backgroundColor: '#FFF7F2', borderColor: '#F2D8C8' },
+  scanNoticeCopy: { flex: 1 },
+  scanNoticeTitle: { color: '#2B271E', fontSize: 13, fontWeight: '700' },
+  scanNoticeText: { color: '#746D7A', fontSize: 11.5, lineHeight: 16, marginTop: 2 },
+  scanRetry: { paddingVertical: 7, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#FFFFFF' },
+  scanRetryText: { color: '#6657FF', fontSize: 12, fontWeight: '700' },
+  aiLoadingScreen: { flex: 1, backgroundColor: '#000000', overflow: 'hidden' },
+  aiLoadingMedia: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
   receipt: {
     alignSelf: 'stretch',
     shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },

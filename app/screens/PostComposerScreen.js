@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import {
-  View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform,
+  View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import PulsingDot from '../components/PulsingDot';
 import BoardPreview from '../components/BoardPreview';
 import DotCard from '../components/DotCard';
+import PhotoCarousel from '../components/PhotoCarousel';
+import { addSetupExtraPhoto, removeSetupExtraPhoto } from '../config/setup';
 
 const SUGGESTED_TAGS = ['minimal', 'gaming', 'productivity', 'cozy', 'RGB', 'wood', 'white', 'mechanical'];
 const mono = Platform.select({ ios: 'Courier New', android: 'monospace', default: 'monospace' });
@@ -68,8 +71,36 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
   // Natural aspect ratio of the photo — render at this with 'contain' so the
   // whole image shows and tags land exactly where they were placed.
   const [photoAspect, setPhotoAspect] = useState(null);
+  // Extra photos on the post (beyond the main tagged shot). Persisted on the
+  // setup so they appear on the published post too.
+  const [extraPhotos, setExtraPhotos] = useState(setup?.extraPhotos || []);
+
+  const addPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo library access to add a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets?.[0]?.base64) {
+      const b64 = result.assets[0].base64;
+      if (setup?.id) await addSetupExtraPhoto(setup.id, b64);
+      setExtraPhotos(prev => [...prev, b64]);
+    }
+  };
+
+  const removePhoto = async (index) => {
+    if (setup?.id) await removeSetupExtraPhoto(setup.id, index);
+    setExtraPhotos(prev => prev.filter((_, i) => i !== index));
+  };
 
   const dotCount = setup?.dots?.length || 0;
+  // A post needs a tagged photo: a setup photo with at least one item tagged on it.
+  const hasTaggedPhoto = !!setup?.photo && dotCount > 0;
   const selectedDot = (setup?.dots || []).find(d => d.id === selectedDotId) || null;
   const selectedItem = selectedDot ? (items || []).find(i => i.id === selectedDot.libraryItemId) : null;
   const suggestions = SUGGESTED_TAGS.filter(t => !tags.includes(t)).slice(0, 4);
@@ -83,6 +114,15 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
   const removeTag = (tag) => setTags(prev => prev.filter(t => t !== tag));
 
   const submit = () => {
+    if (!hasTaggedPhoto) {
+      Alert.alert(
+        'Tag your photo first',
+        !setup?.photo
+          ? 'Add a photo of your setup and tag at least one item on it before posting.'
+          : 'Tag at least one item on your setup photo before posting.',
+      );
+      return;
+    }
     onSubmit({ title: title.trim() || 'Untitled setup', caption: caption.trim(), tags });
   };
 
@@ -108,39 +148,48 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
           </View>
 
           <View style={styles.previewCard}>
-            <View style={[styles.photoWrap, photoAspect ? { aspectRatio: photoAspect } : null]}>
-              {setup?.photo ? (
-                <Image
-                  source={{ uri: `data:image/jpeg;base64,${setup.photo}` }}
-                  style={styles.photoImg}
-                  contentFit="contain"
-                  onLoad={(e) => {
-                    const s = e?.source;
-                    if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
-                  }}
-                />
-              ) : (
-                <LinearGradient colors={['#3A4152', '#4E5D6E', '#5E6B72']} style={styles.photoImg} />
-              )}
-              {/* The gear tags placed on the photo — each dot points at an item
-                  (dot.libraryItemId). Tap one to reveal its product card, same
-                  as the photo section in SetupScreen. */}
-              {(setup?.dots || []).map((d, i) => (
-                <PulsingDot
-                  key={d.id}
-                  x={d.x}
-                  y={d.y}
-                  index={i}
-                  selected={selectedDotId === d.id}
-                  onPress={() => setSelectedDotId(selectedDotId === d.id ? null : d.id)}
-                />
-              ))}
-              <DotCard item={selectedItem} dot={selectedDot} onClose={() => setSelectedDotId(null)} />
-              <View style={styles.tagsBadge}>
-                <Text style={styles.tagsBadgeIcon}>◉</Text>
-                <Text style={styles.tagsBadgeText}>{dotCount} tags</Text>
-              </View>
-            </View>
+            <PhotoCarousel
+              style={styles.carousel}
+              items={[
+                {
+                  base64: setup?.photo || undefined,
+                  gradient: setup?.photo ? undefined : ['#3A4152', '#4E5D6E', '#5E6B72'],
+                  overlay: (
+                    <>
+                      {/* The gear tags placed on the photo — each dot points at an
+                          item (dot.libraryItemId). Tap one to reveal its card. */}
+                      {(setup?.dots || []).map((d, i) => (
+                        <PulsingDot
+                          key={d.id}
+                          x={d.x}
+                          y={d.y}
+                          index={i}
+                          selected={selectedDotId === d.id}
+                          onPress={() => setSelectedDotId(selectedDotId === d.id ? null : d.id)}
+                        />
+                      ))}
+                      <DotCard item={selectedItem} dot={selectedDot} onClose={() => setSelectedDotId(null)} />
+                      <View style={styles.tagsBadge}>
+                        <Text style={styles.tagsBadgeIcon}>◉</Text>
+                        <Text style={styles.tagsBadgeText}>{dotCount} tags</Text>
+                      </View>
+                    </>
+                  ),
+                },
+                ...extraPhotos.map((p, i) => ({
+                  base64: p,
+                  overlay: (
+                    <TouchableOpacity
+                      style={styles.extraPhotoRemove}
+                      onPress={() => removePhoto(i)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.extraPhotoRemoveText}>✕</Text>
+                    </TouchableOpacity>
+                  ),
+                })),
+              ]}
+            />
             <BoardPreview
               setup={setup}
               items={items}
@@ -151,6 +200,12 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
               }}
             />
           </View>
+
+          {/* Add another photo to the slideshow */}
+          <TouchableOpacity style={styles.addPhotoBtn} onPress={addPhoto} activeOpacity={0.85}>
+            <Text style={styles.addPhotoPlus}>＋</Text>
+            <Text style={styles.addPhotoText}>Add new photo</Text>
+          </TouchableOpacity>
 
           {/* Receipt — same paper/perforated/barcode treatment as the Gear Receipt screen */}
           <View style={styles.receipt}>
@@ -243,9 +298,21 @@ export default function PostComposerScreen({ setup, items, onClose, onSubmit }) 
             <Zig dir="down" />
           </View>
 
-          <TouchableOpacity style={styles.submitBtn} onPress={submit} activeOpacity={0.85}>
-            <Text style={styles.submitBtnText}>post to feed</Text>
+          <TouchableOpacity
+            style={[styles.submitBtn, !hasTaggedPhoto && styles.submitBtnDisabled]}
+            onPress={submit}
+            activeOpacity={0.85}
+            disabled={!hasTaggedPhoto}
+          >
+            <Text style={[styles.submitBtnText, !hasTaggedPhoto && styles.submitBtnTextDisabled]}>post to feed</Text>
           </TouchableOpacity>
+          {!hasTaggedPhoto && (
+            <Text style={styles.submitHint}>
+              {!setup?.photo
+                ? 'Add a photo of your setup and tag an item to post.'
+                : 'Tag at least one item on your photo to post.'}
+            </Text>
+          )}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -276,7 +343,24 @@ const styles = StyleSheet.create({
   editLink: { color: C.accent, fontSize: 14, fontWeight: '700' },
 
   previewCard: { backgroundColor: '#F4F4F4', borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 10, gap: 10 },
+  extraPhotoWrap: {
+    aspectRatio: 4 / 3, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#EAE8E2',
+  },
+  extraPhotoRemove: {
+    position: 'absolute', top: 10, right: 10,
+    width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  extraPhotoRemoveText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  addPhotoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#161616', borderStyle: 'dotted',
+  },
+  addPhotoPlus: { color: '#161616', fontSize: 18, fontWeight: '700' },
+  addPhotoText: { color: '#161616', fontSize: 15, fontWeight: '700' },
   photoWrap: { borderRadius: 14, overflow: 'hidden', aspectRatio: 4 / 3, position: 'relative' },
+  carousel: { borderRadius: 14, backgroundColor: '#EAE8E2' },
   // Product card anchored near a tapped dot.
   photoImg: { width: '100%', height: '100%' },
   tagsBadge: {
@@ -346,5 +430,8 @@ const styles = StyleSheet.create({
   },
 
   submitBtn: { marginTop: 22, backgroundColor: '#F2F0EA', borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
+  submitBtnDisabled: { opacity: 0.45 },
   submitBtnText: { color: '#1A1A1A', fontSize: 15, fontWeight: '600' },
+  submitBtnTextDisabled: { color: '#8C846F' },
+  submitHint: { color: C.sub, fontSize: 12.5, textAlign: 'center', marginTop: 10 },
 });

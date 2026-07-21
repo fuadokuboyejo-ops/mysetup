@@ -5,12 +5,17 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup, addPost, buildPostFromSetup } from '../config/setup';
+import { getSetupItems, removeSetupItem, updateSetupPhoto, updateSetupDots, updateSetupSlots, getSetups, deleteSetup, addPost, buildPostFromSetup, makeItemsPublic } from '../config/setup';
+import { imageUri } from '../config/media';
 import {
   computeLayout, normalizeNodes, nodeSpan, getVisualScale,
 } from '../config/boardLayout';
 import PostComposerScreen from './PostComposerScreen';
-import PulsingDot from '../components/PulsingDot';
+import ProductDetailScreen from './ProductDetailScreen';
+import SetupPostScreen from './SetupPostScreen';
+import PulsingDot, { TagPulseHalo } from '../components/PulsingDot';
+import TutorialOverlay, { useTutorialTarget, CheerToast } from '../components/TutorialOverlay';
+import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial } from '../config/tutorial';
 
 // Where the image actually draws inside a container of size (cw × ch) for a
 // given resize mode, given the image's aspect ratio (w/h). Tags are anchored to
@@ -71,7 +76,7 @@ function DropSlot({ slotKey, label, wide, medium, tower, item, hovered, slotRefs
       ]}
     >
       {item ? (
-        <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={A.dropSlotImg} resizeMode="contain" />
+        <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={A.dropSlotImg} resizeMode="contain" />
       ) : (
         <Text style={[A.dropSlotLabel, hovered && A.dropSlotLabelHovered]}>
           {hovered ? 'drop here' : label}
@@ -191,7 +196,7 @@ function ArrangeBoardModal({ visible, items, initialSlots, onSave, onClose }) {
             return (
               <View key={item.id} style={A.gridItem} {...pr.panHandlers}>
                 {item.photoBase64 ? (
-                  <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={A.gridPhoto} resizeMode="contain" />
+                  <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={A.gridPhoto} resizeMode="contain" />
                 ) : (
                   <View style={A.gridPhoto} />
                 )}
@@ -208,7 +213,7 @@ function ArrangeBoardModal({ visible, items, initialSlots, onSave, onClose }) {
         {/* Ghost image follows finger */}
         {isDragging && dragItem && (
           <View style={[A.ghost, { left: ghostPos.x, top: ghostPos.y }]} pointerEvents="none">
-            <Image source={{ uri: `data:image/png;base64,${dragItem.photoBase64}` }} style={A.ghostImg} resizeMode="contain" />
+            <Image source={{ uri: imageUri(dragItem.photoBase64, 'image/png') }} style={A.ghostImg} resizeMode="contain" />
           </View>
         )}
       </SafeAreaView>
@@ -226,7 +231,7 @@ function PhotoDot({ dot, selected, index, onPress }) {
 }
 
 // ─── Photo Tab: Draggable existing dot — lets user reposition placed tags ─────
-function DraggableDot({ dot, imgRectRef, moveDotRef, onRemove }) {
+function DraggableDot({ dot, index, imgRectRef, moveDotRef, onRemove }) {
   const [dragging, setDragging] = useState(false);
 
   const pr = useRef(PanResponder.create({
@@ -258,6 +263,11 @@ function DraggableDot({ dot, imgRectRef, moveDotRef, onRemove }) {
       style={[P.dot, { left: `${dot.x}%`, top: `${dot.y}%` }]}
       {...pr.panHandlers}
     >
+      {!dragging && (
+        <View style={P.editPulseAnchor} pointerEvents="none">
+          <TagPulseHalo index={index} />
+        </View>
+      )}
       <View style={[P.dotGlow, dragging && P.dotGlowSelected]}>
         <View style={[P.dotInner, dragging && P.dotInnerSelected]} />
       </View>
@@ -279,7 +289,7 @@ function DraggableCard({ item, tagged, panHandlers }) {
       {tagged && <View style={T.draggableTaggedDot} />}
       <View style={T.draggableThumb}>
         <Image
-          source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+          source={{ uri: imageUri(item.photoBase64, 'image/png') }}
           style={T.draggableThumbImg}
           resizeMode="contain"
         />
@@ -292,15 +302,15 @@ function DraggableCard({ item, tagged, panHandlers }) {
 }
 
 // ─── Photo Tab: Row shown below the photo for each tagged item ───────────────
-function PhotoItemRow({ item }) {
+function PhotoItemRow({ item, onPress }) {
   return (
     <TouchableOpacity
       style={T.itemRow}
-      onPress={() => Alert.alert('Coming soon', 'Product detail pages are in progress.')}
+      onPress={onPress}
       activeOpacity={0.8}
     >
       <View style={T.itemRowThumb}>
-        <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={T.itemRowImg} resizeMode="contain" />
+        <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={T.itemRowImg} resizeMode="contain" />
       </View>
       <View style={T.itemRowInfo}>
         {!!item.product?.brand && item.product.brand !== 'Unknown' && (
@@ -331,7 +341,7 @@ function DotItemCard({ item, dot, onClose }) {
   return (
     <View style={[P.card, hStyle, vStyle]}>
       <View style={P.cardThumb}>
-        <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={P.cardThumbImg} resizeMode="contain" />
+        <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={P.cardThumbImg} resizeMode="contain" />
       </View>
       <View style={P.cardInfo}>
         {!!item.product?.brand && item.product.brand !== 'Unknown' && (
@@ -375,7 +385,14 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   // Full-screen arrange page (drag items onto/between slots) — opens
   // immediately when arriving via a deep link (e.g. Revamp's "Arrange board").
   const [arranging, setArranging] = useState(autoArrange);
+
+  // Tutorial: spotlight the "Arrange board" button, then coach the first drag.
+  const arrangeStep = useTutorialStep('arrange-board');
+  const arrangeTarget = useTutorialTarget(arrangeStep.active && !arranging);
+  const dragStep = useTutorialStep('drag-item');
   const [postComposerOpen, setPostComposerOpen] = useState(false);
+  const [productDetailItem, setProductDetailItem] = useState(null);
+  const [productSetupPost, setProductSetupPost] = useState(null);
 
   // Board item drag — place from the tray onto a slot, or move between slots.
   const [boardDrag, setBoardDrag] = useState(null);       // { item, fromNode }
@@ -439,6 +456,10 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
 
   // ── Board placement (per-setup) ──────────────────────────────────────────────
   const persistSlots = (next) => {
+    // Tutorial: any board placement completes the drag step and shows the
+    // finale. fromId-guarded, so it's a no-op outside the tutorial / on other
+    // steps. (Unconditional so a stale-closure slot count can't swallow it.)
+    advanceTutorial('drag-item');
     setBoardSlots(next);
     updateSetupSlots(setup?.id || 'default', next);
   };
@@ -701,7 +722,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                 const vw = getVisualScale(item);
                 return (
                   <Image
-                    source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+                    source={{ uri: imageUri(item.photoBase64, 'image/png') }}
                     style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
                     resizeMode="contain"
                   />
@@ -745,7 +766,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             {...getBoardPR(item, null).panHandlers}
             style={[styles.trayCard, placed && styles.trayCardPlaced, dragging && styles.trayCardDragging]}
           >
-            <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.trayImg} resizeMode="contain" />
+            <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={styles.trayImg} resizeMode="contain" />
             <Text style={styles.trayName} numberOfLines={1}>{item.product?.product_name || 'item'}</Text>
             {placed && <View style={styles.trayDot} />}
           </View>
@@ -768,7 +789,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
           const vw = getVisualScale(item);
           return (
             <Image
-              source={{ uri: `data:image/png;base64,${item.photoBase64}` }}
+              source={{ uri: imageUri(item.photoBase64, 'image/png') }}
               style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
               resizeMode="contain"
             />
@@ -805,7 +826,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   // ── Arrange page — drag items onto the board, or between slots ──────────────
   // Arriving via a deep link (e.g. Revamp's "Arrange board") returns straight
   // there when done; opened from within the setup screen just closes back to it.
-  const exitArrange = () => (autoArrange ? onBack() : setArranging(false));
+  const exitArrange = () => {
+    // Leaving the arrange page during the drag step: if they placed anything,
+    // count it as done and roll into the finale; if the board is still empty,
+    // end the tour quietly.
+    if (dragStep.active) {
+      if (Object.keys(boardSlots).length > 0) advanceTutorial('drag-item');
+      else skipTutorial();
+    }
+    return autoArrange ? onBack() : setArranging(false);
+  };
 
   if (arranging) {
     return (
@@ -838,8 +868,15 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         {/* Ghost that follows the finger while dragging. */}
         {boardDrag && (
           <View style={[styles.boardGhost, { left: boardGhost.x - 44, top: boardGhost.y - 44 }]} pointerEvents="none">
-            <Image source={{ uri: `data:image/png;base64,${boardDrag.item.photoBase64}` }} style={styles.boardGhostImg} resizeMode="contain" />
+            <Image source={{ uri: imageUri(boardDrag.item.photoBase64, 'image/png') }} style={styles.boardGhostImg} resizeMode="contain" />
           </View>
+        )}
+
+        {/* Tutorial: persistent coach pill — nothing may block the drag
+            gestures here, so no scrim, just the instruction. Unmounts when
+            the drop lands and the step advances. */}
+        {dragStep.active && (
+          <CheerToast text={dragStep.step?.text} top={64} persist />
         )}
       </View>
     );
@@ -904,7 +941,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               >
                 {setupPhoto ? (
                   <Image
-                    source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }}
+                    source={{ uri: imageUri(setupPhoto) }}
                     style={StyleSheet.absoluteFill}
                     resizeMode="contain"
                     onLoad={(e) => {
@@ -928,10 +965,11 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                     : StyleSheet.absoluteFill;
                   return (
                     <View style={overlay} pointerEvents="box-none">
-                      {dots.map(dot => (
+                      {dots.map((dot, index) => (
                         <DraggableDot
                           key={dot.id}
                           dot={dot}
+                          index={index}
                           imgRectRef={photoImgRectRef}
                           moveDotRef={moveDotRef}
                           onRemove={removeDot}
@@ -980,7 +1018,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                 }]}
                 pointerEvents="none"
               >
-                <Image source={{ uri: `data:image/png;base64,${dragCard.photoBase64}` }} style={T.cardGhostImg} resizeMode="contain" />
+                <Image source={{ uri: imageUri(dragCard.photoBase64, 'image/png') }} style={T.cardGhostImg} resizeMode="contain" />
               </View>
             )}
           </View>
@@ -992,7 +1030,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             <View style={[styles.photoAreaScroll, photoAspect ? { aspectRatio: photoAspect } : null]}>
               {setupPhoto ? (
                 <Image
-                  source={{ uri: `data:image/jpeg;base64,${setupPhoto}` }}
+                  source={{ uri: imageUri(setupPhoto) }}
                   style={StyleSheet.absoluteFill}
                   resizeMode="contain"
                   onLoad={(e) => {
@@ -1061,7 +1099,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                   <Text style={styles.photoTagsLabel}>In this photo</Text>
                   {dots.map(dot => {
                     const item = items.find(i => i.id === dot.libraryItemId);
-                    return item ? <PhotoItemRow key={dot.id} item={item} /> : null;
+                    return item ? <PhotoItemRow key={dot.id} item={item} onPress={() => setProductDetailItem(item)} /> : null;
                   })}
                 </>
               )}
@@ -1102,7 +1140,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               <Text style={styles.detailPanelLabel}>{selected.product.category}</Text>
               <View style={styles.detailCard}>
                 <View style={styles.detailPhotoBox}>
-                  <Image source={{ uri: `data:image/png;base64,${selected.photoBase64}` }} style={styles.detailPhoto} resizeMode="contain" />
+                  <Image source={{ uri: imageUri(selected.photoBase64, 'image/png') }} style={styles.detailPhoto} resizeMode="contain" />
                 </View>
                 <View style={styles.detailInfo}>
                   <Text style={styles.detailCategory}>{selected.product.category}</Text>
@@ -1110,8 +1148,8 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                   {!!selected.product.brand && selected.product.brand !== 'Unknown' && (
                     <Text style={styles.detailBrand}>{selected.product.brand}</Text>
                   )}
-                  <TouchableOpacity style={styles.viewBtn} onPress={() => Alert.alert('Coming soon', 'Product detail pages are in progress.')}>
-                    <Text style={styles.viewBtnText}>View details</Text>
+                  <TouchableOpacity style={styles.viewBtn} onPress={() => setProductDetailItem(selected)}>
+                    <Text style={styles.viewBtnText}>View product</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1144,7 +1182,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             <Text style={styles.arrangeHint}>Tap an empty slot on the board to place an item from your library.</Text>
 
             <View style={styles.boardActionsRow}>
-              <TouchableOpacity style={styles.arrangeBoardBtn} onPress={() => setArranging(true)} activeOpacity={0.85}>
+              <TouchableOpacity
+                ref={arrangeTarget.ref}
+                onLayout={arrangeTarget.onLayout}
+                style={styles.arrangeBoardBtn}
+                onPress={() => {
+                  if (arrangeStep.active) advanceTutorial('arrange-board');
+                  setArranging(true);
+                }}
+                activeOpacity={0.85}
+              >
                 <Text style={styles.arrangeBoardText}>⤢  Arrange board</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1167,12 +1214,12 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               return (
                 <View key={item.id} style={[styles.listCard, styles.listCardBorder]}>
                   <View style={styles.listPhotoBox}>
-                    <Image source={{ uri: `data:image/png;base64,${item.photoBase64}` }} style={styles.listPhoto} resizeMode="contain" />
+                    <Image source={{ uri: imageUri(item.photoBase64, 'image/png') }} style={styles.listPhoto} resizeMode="contain" />
                   </View>
-                  <View style={styles.listInfo}>
+                  <TouchableOpacity style={styles.listInfo} onPress={() => setProductDetailItem(item)} activeOpacity={0.75}>
                     <Text style={styles.listName} numberOfLines={1}>{item.product.product_name}</Text>
                     <Text style={styles.listCategory} numberOfLines={1}>{item.product.category}</Text>
-                  </View>
+                  </TouchableOpacity>
                   <TouchableOpacity style={styles.listRemoveBtn} onPress={() => handleRemove(item.id, item.product.product_name)}>
                     <Text style={styles.listRemoveText}>✕</Text>
                   </TouchableOpacity>
@@ -1204,7 +1251,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                     activeOpacity={0.75}
                   >
                     <View style={styles.pickerThumb}>
-                      <Image source={{ uri: `data:image/png;base64,${it.photoBase64}` }} style={styles.pickerThumbImg} resizeMode="contain" />
+                      <Image source={{ uri: imageUri(it.photoBase64, 'image/png') }} style={styles.pickerThumbImg} resizeMode="contain" />
                     </View>
                     <Text style={styles.pickerItemName} numberOfLines={1}>{it.product?.product_name || 'Item'}</Text>
                   </TouchableOpacity>
@@ -1227,6 +1274,9 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               setPostComposerOpen(false);
               try {
                 await addPost(buildPostFromSetup(setup, items, data));
+                // Gear on a posted board is visible to everyone viewing the post,
+                // so publish those items too.
+                await makeItemsPublic(Object.values(boardSlots || {}));
                 Alert.alert('Posted', `"${data.title}" is now live on your feed.`);
               } catch (e) {
                 Alert.alert('Could not post', e.message);
@@ -1236,6 +1286,35 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         </SafeAreaProvider>
       </Modal>
 
+      <Modal
+        visible={!!productDetailItem}
+        animationType="slide"
+        onRequestClose={() => (productSetupPost ? setProductSetupPost(null) : setProductDetailItem(null))}
+      >
+        <SafeAreaProvider>
+          {productSetupPost ? (
+            <SetupPostScreen post={productSetupPost} onBack={() => setProductSetupPost(null)} />
+          ) : (
+            <ProductDetailScreen
+              item={productDetailItem}
+              onBack={() => setProductDetailItem(null)}
+              onOpenSetup={({ post }) => setProductSetupPost(post)}
+            />
+          )}
+        </SafeAreaProvider>
+      </Modal>
+
+      {/* Tutorial: spotlight the "Arrange board" button on the Board tab. */}
+      {arrangeStep.active && !arranging && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={arrangeStep.stepIndex}
+          targetRect={arrangeTarget.rect}
+          onTargetPress={() => { advanceTutorial('arrange-board'); setArranging(true); }}
+          onSkip={skipTutorial}
+        />
+      )}
     </View>
   );
 }
@@ -1506,6 +1585,10 @@ const P = StyleSheet.create({
     width: 22, height: 22,
     alignItems: 'center', justifyContent: 'center',
     transform: [{ translateX: -11 }, { translateY: -11 }],
+  },
+  editPulseAnchor: {
+    position: 'absolute', width: 16, height: 16,
+    left: 3, top: 3,
   },
   dotGlow: {
     width: 18, height: 18, borderRadius: 9,

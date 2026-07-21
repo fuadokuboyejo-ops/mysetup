@@ -1,12 +1,22 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Image, Animated, Modal, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Image, Animated, Modal, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { getGenerationsUsed, getGenerationHistory, getSetups, GENERATIONS_LIMIT, SETUP_TYPES } from '../config/setup';
+import { imageUri } from '../config/media';
 
 const RING_SIZE = 60;
 const RING_STROKE = 6;
+
+// Exactly 3 gallery columns: full screen width minus the grid's side padding
+// (20 each side) and the two 12px gaps between the three items. Computing the
+// pixel width avoids the "31.3% + gap overflows and wraps to 2" problem.
+const GALLERY_GAP = 12;
+const GALLERY_PAD = 20;
+const GALLERY_ITEM = Math.floor(
+  (Dimensions.get('window').width - GALLERY_PAD * 2 - GALLERY_GAP * 2) / 3,
+);
 
 function GenRing({ used, limit }) {
   const r = (RING_SIZE - RING_STROKE) / 2;
@@ -268,7 +278,7 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
                         style={styles.historyThumbWrap}
                       >
                         <Image
-                          source={{ uri: `data:image/jpeg;base64,${h.image}` }}
+                          source={{ uri: imageUri(h.image) }}
                           style={[styles.historyThumb, historyWidth > 0 && { width: historyWidth }]}
                           resizeMode="cover"
                         />
@@ -343,7 +353,7 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
             <ScrollView contentContainerStyle={styles.galleryGrid} showsVerticalScrollIndicator={false}>
               {history.map(h => (
                 <View key={h.id} style={styles.galleryItem}>
-                  <Image source={{ uri: `data:image/jpeg;base64,${h.image}` }} style={styles.galleryItemImage} resizeMode="cover" />
+                  <Image source={{ uri: imageUri(h.image) }} style={styles.galleryItemImage} resizeMode="cover" />
                 </View>
               ))}
             </ScrollView>
@@ -393,10 +403,10 @@ export default function RevampMenuScreen({ onBack, onDesignFromScratch, onDiffer
                       <TouchableOpacity
                         key={s.id}
                         style={styles.gearSetupRow}
-                        onPress={() => finishGear({ uri: `data:image/jpeg;base64,${s.photo}`, base64: s.photo })}
+                        onPress={() => finishGear({ uri: imageUri(s.photo), base64: s.photo })}
                         activeOpacity={0.8}
                       >
-                        <Image source={{ uri: `data:image/jpeg;base64,${s.photo}` }} style={styles.gearSetupThumb} resizeMode="cover" />
+                        <Image source={{ uri: imageUri(s.photo) }} style={styles.gearSetupThumb} resizeMode="cover" />
                         <Text style={styles.gearSetupName} numberOfLines={1}>{s.name}</Text>
                         <Text style={styles.gearChevron}>›</Text>
                       </TouchableOpacity>
@@ -504,11 +514,11 @@ const styles = StyleSheet.create({
   galleryTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
   galleryClose: { color: C.sub, fontSize: 20, fontWeight: '600' },
   galleryGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
-    paddingHorizontal: 20, paddingBottom: 40,
+    flexDirection: 'row', flexWrap: 'wrap', gap: GALLERY_GAP,
+    paddingHorizontal: GALLERY_PAD, paddingBottom: 40,
   },
   galleryItem: {
-    width: '31.3%', aspectRatio: 1, borderRadius: 12,
+    width: GALLERY_ITEM, aspectRatio: 1, borderRadius: 12,
     borderWidth: 1.5, borderColor: '#161616',
     overflow: 'hidden', backgroundColor: '#F0EFEA',
   },

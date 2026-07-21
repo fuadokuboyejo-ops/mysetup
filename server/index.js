@@ -4,13 +4,11 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const Anthropic = require('@anthropic-ai/sdk');
 const { execSync, spawn } = require('child_process');
 
 const app = express();
 const PORT = 3001;
 const LOCAL_IP = '192.168.68.51';
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const OUTPUT_DIR = path.join(__dirname, 'output');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -24,59 +22,6 @@ app.use('/output', express.static(OUTPUT_DIR));
 const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-app.post('/api/scan', async (req, res) => {
-  const { photo } = req.body;
-  if (!photo) return res.status(400).json({ error: 'No photo provided' });
-
-  console.log(`📸 Received photo (${(photo.length / 1024).toFixed(1)} KB)`);
-
-  try {
-    const response = await client.messages.create({
-      model: 'claude-opus-4-8',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: photo },
-          },
-          {
-            type: 'text',
-            text: `You are a 3D product reconstruction assistant. Analyze this photo and output JSON only, no prose.
-
-OUTPUT FORMAT:
-{
-  "product_name": "",
-  "brand": "exact brand name if visible, or 'Unknown' if not identifiable",
-  "category": "",
-  "estimated_dimensions": { "width": "", "height": "", "depth": "", "unit": "cm" },
-  "primary_colors": [],
-  "materials": [],
-  "surface_texture": "",
-  "geometry_summary": "",
-  "confidence": 0.0,
-  "model_prompt": ""
-}`,
-          },
-        ],
-      }],
-    });
-
-    const raw = response.content[0].text.trim();
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in Claude response');
-
-    const product = JSON.parse(jsonMatch[0]);
-    console.log(`✅ Identified: ${product.product_name} (${Math.round(product.confidence * 100)}% confidence)`);
-
-    res.json({ product });
-  } catch (e) {
-    console.error('Error:', e.message);
-    res.status(500).json({ error: 'Failed to analyze image', details: e.message });
-  }
-});
 
 app.post('/api/remove-bg', async (req, res) => {
   const { photo } = req.body;

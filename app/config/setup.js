@@ -1,253 +1,672 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
+import { supabase } from './supabase';
+import { isMediaUrl, stripDataUrl } from './media';
 
-// The kinds of setup a user can create. Shared by the Profile "New Setup" modal
-// and the AI Revamp "Design from scratch" type picker so both stay in sync.
 export const SETUP_TYPES = [
-  { key: 'pc',      label: 'PC / Console',  symbol: '⬡' },
-  { key: 'server',  label: 'Server Setup',  symbol: '⬡' },
-  { key: 'laptop',  label: 'Laptop Setup',  symbol: '⬡' },
+  { key: 'pc',      label: 'PC / Console', symbol: '⬡' },
+  { key: 'server',  label: 'Server Setup', symbol: '⬡' },
+  { key: 'laptop',  label: 'Laptop Setup', symbol: '⬡' },
 ];
 
-// Types that open straight into the board builder (so the layout can be edited
-// before anything else).
 export const BUILDABLE_TYPES = ['pc', 'server', 'laptop'];
+export const GENERATIONS_LIMIT = 100;
 
-const SETUPS_KEY = 'mysetup_setups';
-const ITEMS_KEY = 'mysetup_items_v2';   // universal item library — shared by every setup
-const LEGACY_KEY = 'mysetup_items';
-const PREMIUM_KEY = 'mysetup_is_premium';
-const GENERATIONS_KEY = 'mysetup_generations'; // { count, monthKey } — resets when the calendar month changes
-const HISTORY_KEY = 'mysetup_generation_history';
-// Android's SQLite CursorWindow caps a single AsyncStorage row around ~2MB —
-// callers must pass small compressed thumbnails here, not full-size images.
+const BUCKETS = {
+  items: 'item-photos',
+  setups: 'setup-photos',
+  history: 'revamp-history',
+};
+const SIGNED_URL_SECONDS = 60 * 60;
 const HISTORY_LIMIT = 12;
 
-// Ensures storage exists and that items live in the global ITEMS_KEY store.
-// Older builds kept items per-setup; migrate those into the shared library once.
-// Cached so concurrent callers (e.g. getSetups + getAllItems in parallel) share
-// a single run instead of racing the migration.
-let _migration = null;
-function migrate() {
-  if (!_migration) _migration = runMigration();
-  return _migration;
+function uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
-async function runMigration() {
-  const existingRaw = await AsyncStorage.getItem(SETUPS_KEY);
+async function currentUser() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!data?.user) throw new Error('Sign in to save and sync your data.');
+  return data.user;
+}
 
-  if (!existingRaw) {
-    // Fresh install (or very old layout): seed a default setup and move any
-    // legacy items into the global library.
-    const legacy = await AsyncStorage.getItem(LEGACY_KEY);
-    const legacyItems = legacy ? JSON.parse(legacy) : [];
-    await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify([
-      { id: 'default', name: 'Main Rig', createdAt: new Date().toISOString() },
-    ]));
-    if ((await AsyncStorage.getItem(ITEMS_KEY)) == null) {
-      await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(legacyItems));
-    }
-    return;
-  }
+function throwIfError(error) {
+  if (error) throw error;
+}
 
-  // One-time: pull any per-setup items into the shared library, then strip them
-  // from the setups so items are truly universal from here on.
-  if ((await AsyncStorage.getItem(ITEMS_KEY)) == null) {
-    const setups = JSON.parse(existingRaw);
-    const all = [];
-    const seen = new Set();
-    for (const s of setups) {
-      for (const it of (s.items || [])) {
-        if (!seen.has(it.id)) { seen.add(it.id); all.push(it); }
-      }
-    }
-    await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(all));
-    await AsyncStorage.setItem(
-      SETUPS_KEY,
-      JSON.stringify(setups.map(({ items, ...rest }) => rest)),
-    );
-  }
+async function signedUrl(bucket, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, SIGNED_URL_SECONDS);
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
+async function uploadBase64(bucket, path, value, contentType) {
+  const base64 = stripDataUrl(value);
+  if (!base64) throw new Error('The selected media could not be read.');
+  const { error } = await supabase.storage
+    .from(bucket)
+    .upload(path, decode(base64), { contentType, cacheControl: '3600', upsert: true });
+  throwIfError(error);
+  return path;
+}
+
+function imageFormat(value, fallback = 'jpg') {
+  const raw = stripDataUrl(value);
+  if (raw.startsWith('iVBOR')) return { extension: 'png', contentType: 'image/png' };
+  if (raw.startsWith('UklGR')) return { extension: 'webp', contentType: 'image/webp' };
+  return fallback === 'png'
+    ? { extension: 'png', contentType: 'image/png' }
+    : { extension: 'jpg', contentType: 'image/jpeg' };
+}
+
+async function uploadUri(bucket, path, uri, contentType) {
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return uploadBase64(bucket, path, base64, contentType);
+}
+
+async function removeStorageObjects(bucket, paths) {
+  const filtered = [...new Set((paths || []).filter(Boolean))];
+  if (filtered.length === 0) return;
+  const { error } = await supabase.storage.from(bucket).remove(filtered);
+  if (error) console.warn(`[storage] Could not remove ${bucket} objects:`, error.message);
+}
+
+async function mapSetup(row) {
+  if (!row) return null;
+  const [photo, monitorWallpaper, ...extraPhotos] = await Promise.all([
+    signedUrl(BUCKETS.setups, row.photo_path),
+    signedUrl(BUCKETS.setups, row.wallpaper_path),
+    ...(row.extra_photo_paths || []).map(path => signedUrl(BUCKETS.setups, path)),
+  ]);
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    type: row.type,
+    photo,
+    photoPath: row.photo_path,
+    monitorWallpaper,
+    wallpaperPath: row.wallpaper_path,
+    extraPhotos,
+    extraPhotoPaths: row.extra_photo_paths || [],
+    dots: row.dots || [],
+    boardLayout: row.board_layout || null,
+    slots: row.slots || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function mapItem(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    product: row.product || {},
+    photoBase64: await signedUrl(BUCKETS.items, row.photo_path),
+    photoPath: row.photo_path,
+    isCutout: row.is_cutout,
+    isPublic: row.is_public,
+    addedAt: row.added_at,
+  };
+}
+
+function setupItemIds(setup) {
+  return [...new Set([
+    ...Object.values(setup?.slots || {}),
+    ...(setup?.dots || []).map(dot => dot.libraryItemId),
+  ].filter(Boolean))];
+}
+
+async function updateSetup(setupId, patch) {
+  const user = await currentUser();
+  const { error } = await supabase
+    .from('setups')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', setupId)
+    .eq('user_id', user.id);
+  throwIfError(error);
 }
 
 export async function getSetups() {
-  await migrate();
-  const raw = await AsyncStorage.getItem(SETUPS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('setups')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true });
+  throwIfError(error);
+  return Promise.all((data || []).map(mapSetup));
 }
 
 export async function createSetup(name, type = 'pc') {
-  const setups = await getSetups();
-  const newSetup = { id: Date.now().toString(), name, type, createdAt: new Date().toISOString() };
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify([...setups, newSetup]));
-  return newSetup;
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('setups')
+    .insert({ user_id: user.id, name, type })
+    .select('*')
+    .single();
+  throwIfError(error);
+  return mapSetup(data);
 }
 
-// ─── Universal item library (shared across all setups) ───────────────────────
 export async function getAllItems() {
-  await migrate();
-  const raw = await AsyncStorage.getItem(ITEMS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('items')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('added_at', { ascending: false });
+  throwIfError(error);
+  return Promise.all((data || []).map(mapItem));
 }
 
-// `setupId` is kept for call-site compatibility — items are global now.
+export async function getPublicItems() {
+  await currentUser();
+  const { data, error } = await supabase
+    .from('items')
+    .select('*')
+    .eq('is_public', true)
+    .order('added_at', { ascending: false })
+    .limit(100);
+  throwIfError(error);
+  return Promise.all((data || []).map(mapItem));
+}
+
 export async function getSetupItems() {
   return getAllItems();
 }
 
-// `isCutout` records whether `photoBase64` actually went through background
-// removal (vs. falling back to the raw photo) — the board only places items
-// where this is true (or missing, for items saved before this flag existed).
 export async function addSetupItem(_setupId, product, photoBase64, isCutout = true) {
-  const items = await getAllItems();
-  const item = { id: Date.now().toString(), product, photoBase64, isCutout, addedAt: new Date().toISOString() };
-  await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify([item, ...items]));
-  return item;
+  const user = await currentUser();
+  const id = uuid();
+  const extension = isCutout ? 'png' : 'jpg';
+  const contentType = isCutout ? 'image/png' : 'image/jpeg';
+  const photoPath = `${user.id}/${id}.${extension}`;
+  await uploadBase64(BUCKETS.items, photoPath, photoBase64, contentType);
+
+  const { data, error } = await supabase
+    .from('items')
+    .insert({
+      id,
+      user_id: user.id,
+      product,
+      photo_path: photoPath,
+      is_cutout: isCutout,
+      is_public: false,
+    })
+    .select('*')
+    .single();
+  if (error) {
+    await removeStorageObjects(BUCKETS.items, [photoPath]);
+    throw error;
+  }
+  return mapItem(data);
 }
 
-// Used to retry background removal on an already-saved item (e.g. from the
-// board's "needs cutout" prompt) without creating a duplicate library entry.
 export async function updateSetupItemPhoto(itemId, photoBase64, isCutout) {
-  const items = await getAllItems();
-  const updated = items.map(i => i.id === itemId ? { ...i, photoBase64, isCutout } : i);
-  await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(updated));
+  const user = await currentUser();
+  const extension = isCutout ? 'png' : 'jpg';
+  const contentType = isCutout ? 'image/png' : 'image/jpeg';
+  const photoPath = `${user.id}/${itemId}.${extension}`;
+  const { data: existing, error: readError } = await supabase
+    .from('items')
+    .select('photo_path')
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  await uploadBase64(BUCKETS.items, photoPath, photoBase64, contentType);
+  const { data, error } = await supabase
+    .from('items')
+    .update({ photo_path: photoPath, is_cutout: isCutout })
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .select('*')
+    .single();
+  throwIfError(error);
+  if (existing?.photo_path !== photoPath) {
+    await removeStorageObjects(BUCKETS.items, [existing?.photo_path]);
+  }
+  return mapItem(data);
 }
 
 export async function removeSetupItem(_setupId, itemId) {
-  const items = await getAllItems();
-  await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(items.filter(i => i.id !== itemId)));
+  const user = await currentUser();
+  const { data, error: readError } = await supabase
+    .from('items')
+    .select('photo_path')
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const { error } = await supabase
+    .from('items')
+    .delete()
+    .eq('id', itemId)
+    .eq('user_id', user.id);
+  throwIfError(error);
+  await removeStorageObjects(BUCKETS.items, [data?.photo_path]);
+}
+
+export async function setItemPublic(itemId, isPublic) {
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('items')
+    .update({ is_public: !!isPublic })
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .select('*')
+    .single();
+  throwIfError(error);
+  return mapItem(data);
+}
+
+export async function makeItemsPublic(itemIds) {
+  const ids = [...new Set((itemIds || []).filter(Boolean))];
+  if (ids.length === 0) return;
+  const user = await currentUser();
+  const { error } = await supabase
+    .from('items')
+    .update({ is_public: true })
+    .eq('user_id', user.id)
+    .in('id', ids);
+  throwIfError(error);
+}
+
+export async function syncPublicItemsFromPosts() {
+  const user = await currentUser();
+  const [{ data: posts, error: postsError }, { data: setups, error: setupsError }] = await Promise.all([
+    supabase.from('posts').select('setup_id').eq('user_id', user.id),
+    supabase.from('setups').select('id, slots').eq('user_id', user.id),
+  ]);
+  throwIfError(postsError);
+  throwIfError(setupsError);
+  const publishedIds = new Set((posts || []).map(post => post.setup_id));
+  const publicItemIds = [...new Set((setups || [])
+    .filter(setup => publishedIds.has(setup.id))
+    .flatMap(setup => Object.values(setup.slots || {}))
+    .filter(Boolean))];
+  await makeItemsPublic(publicItemIds);
+  return getAllItems();
+}
+
+export async function updateItemProduct(itemId, patch) {
+  const user = await currentUser();
+  const { data: current, error: readError } = await supabase
+    .from('items')
+    .select('product')
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const { data, error } = await supabase
+    .from('items')
+    .update({ product: { ...(current?.product || {}), ...patch } })
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .select('*')
+    .single();
+  throwIfError(error);
+  return mapItem(data);
+}
+
+export async function fetchItemPrice(item) {
+  const { data, error } = await supabase.functions.invoke('price-lookup', {
+    body: {
+      name: item.product?.product_name,
+      brand: item.product?.brand,
+      category: item.product?.category,
+    },
+  });
+  if (error) throw new Error(error.message || 'Price lookup failed');
+  if (data?.error) throw new Error(data.error);
+  if (data?.price == null) return { item, matched: false };
+
+  const updated = await updateItemProduct(item.id, {
+    price: data.price,
+    regular_price: data.regularPrice ?? null,
+    currency: data.currency || 'USD',
+    price_source: data.source || 'ebay',
+    purchase_url: data.purchase_url || item.product?.purchase_url || null,
+    price_updated_at: new Date().toISOString(),
+  });
+  return { item: updated, matched: true };
 }
 
 export async function deleteSetup(setupId) {
-  const setups = await getSetups();
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(setups.filter(s => s.id !== setupId)));
+  const user = await currentUser();
+  const { data: setup, error: readError } = await supabase
+    .from('setups')
+    .select('photo_path, wallpaper_path, extra_photo_paths')
+    .eq('id', setupId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const { error } = await supabase.rpc('delete_setup', { p_setup_id: setupId });
+  throwIfError(error);
+  await removeStorageObjects(BUCKETS.setups, [
+    setup?.photo_path,
+    setup?.wallpaper_path,
+    ...(setup?.extra_photo_paths || []),
+  ]);
 }
 
 export async function updateSetupPhoto(setupId, photoBase64) {
-  const setups = await getSetups();
-  const updated = setups.map(s => s.id === setupId ? { ...s, photo: photoBase64 } : s);
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(updated));
+  const user = await currentUser();
+  const { data: existing, error: readError } = await supabase
+    .from('setups')
+    .select('photo_path')
+    .eq('id', setupId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const format = imageFormat(photoBase64);
+  const photoPath = `${user.id}/${setupId}/main.${format.extension}`;
+  await uploadBase64(BUCKETS.setups, photoPath, photoBase64, format.contentType);
+  await updateSetup(setupId, { photo_path: photoPath });
+  if (existing?.photo_path !== photoPath) {
+    await removeStorageObjects(BUCKETS.setups, [existing?.photo_path]);
+  }
+  return signedUrl(BUCKETS.setups, photoPath);
+}
+
+export async function addSetupExtraPhoto(setupId, photoBase64) {
+  const user = await currentUser();
+  const { data, error: readError } = await supabase
+    .from('setups')
+    .select('extra_photo_paths')
+    .eq('id', setupId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const path = `${user.id}/${setupId}/extra-${uuid()}.jpg`;
+  await uploadBase64(BUCKETS.setups, path, photoBase64, 'image/jpeg');
+  try {
+    await updateSetup(setupId, { extra_photo_paths: [...(data?.extra_photo_paths || []), path] });
+  } catch (error) {
+    await removeStorageObjects(BUCKETS.setups, [path]);
+    throw error;
+  }
+  return signedUrl(BUCKETS.setups, path);
+}
+
+export async function removeSetupExtraPhoto(setupId, index) {
+  const user = await currentUser();
+  const { data, error: readError } = await supabase
+    .from('setups')
+    .select('extra_photo_paths')
+    .eq('id', setupId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(readError);
+  const paths = data?.extra_photo_paths || [];
+  const removed = paths[index];
+  await updateSetup(setupId, { extra_photo_paths: paths.filter((_, i) => i !== index) });
+  await removeStorageObjects(BUCKETS.setups, [removed]);
 }
 
 export async function updateSetupDots(setupId, dots) {
-  const setups = await getSetups();
-  const updated = setups.map(s => s.id === setupId ? { ...s, dots } : s);
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(updated));
+  await updateSetup(setupId, { dots });
 }
 
 export async function updateSetupWallpaper(setupId, wallpaperUri) {
-  const setups = await getSetups();
-  const updated = setups.map(s => s.id === setupId ? { ...s, monitorWallpaper: wallpaperUri } : s);
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(updated));
+  const user = await currentUser();
+  const isVideo = /\.mp4(?:$|\?)/i.test(wallpaperUri || '');
+  const extension = isVideo ? 'mp4' : 'jpg';
+  const contentType = isVideo ? 'video/mp4' : 'image/jpeg';
+  const path = `${user.id}/${setupId}/wallpaper.${extension}`;
+  if (isMediaUrl(wallpaperUri) && !/^https?:/i.test(wallpaperUri)) {
+    await uploadUri(BUCKETS.setups, path, wallpaperUri, contentType);
+  } else {
+    await uploadBase64(BUCKETS.setups, path, wallpaperUri, contentType);
+  }
+  await updateSetup(setupId, { wallpaper_path: path });
+  return signedUrl(BUCKETS.setups, path);
 }
 
 export async function updateSetupLayout(setupId, boardLayout) {
-  const setups = await getSetups();
-  const updated = setups.map(s => s.id === setupId ? { ...s, boardLayout } : s);
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(updated));
+  await updateSetup(setupId, { board_layout: boardLayout });
 }
 
-// Per-setup board placements: { [nodeId]: itemId }. Items come from the shared
-// library, but which item sits in which slot is unique to each setup. Stored as
-// a plain id→id map so it maps cleanly onto a future backend table.
 export async function updateSetupSlots(setupId, slots) {
-  const setups = await getSetups();
-  const updated = setups.map(s => s.id === setupId ? { ...s, slots } : s);
-  await AsyncStorage.setItem(SETUPS_KEY, JSON.stringify(updated));
+  await updateSetup(setupId, { slots });
 }
 
-// ─── Premium gating (AI Revamp) — no payment processor wired up yet; this just
-// remembers the "unlocked" flag locally so the paywall isn't shown every time. ─
 export async function getIsPremium() {
-  return (await AsyncStorage.getItem(PREMIUM_KEY)) === 'true';
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('is_premium')
+    .eq('id', user.id)
+    .single();
+  throwIfError(error);
+  return !!data?.is_premium;
 }
 
 export async function setIsPremium(value) {
-  await AsyncStorage.setItem(PREMIUM_KEY, value ? 'true' : 'false');
+  const user = await currentUser();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ is_premium: !!value, updated_at: new Date().toISOString() })
+    .eq('id', user.id);
+  throwIfError(error);
 }
 
-// ─── AI Revamp generations — capped per calendar month ────────────────────────
-export const GENERATIONS_LIMIT = 100;
-
 function currentMonthKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth()}`;
+  const date = new Date();
+  return `${date.getFullYear()}-${date.getMonth() + 1}`;
 }
 
 export async function getGenerationsUsed() {
-  const raw = await AsyncStorage.getItem(GENERATIONS_KEY);
-  const data = raw ? JSON.parse(raw) : null;
-  if (!data || data.monthKey !== currentMonthKey()) return 0;
-  return data.count;
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('generations_count, generations_month')
+    .eq('id', user.id)
+    .single();
+  throwIfError(error);
+  return data?.generations_month === currentMonthKey() ? data.generations_count : 0;
 }
 
 export async function incrementGenerationsUsed() {
-  const used = await getGenerationsUsed();
-  const count = used + 1;
-  await AsyncStorage.setItem(GENERATIONS_KEY, JSON.stringify({ count, monthKey: currentMonthKey() }));
-  return count;
+  const { data, error } = await supabase.rpc('increment_generation_count');
+  throwIfError(error);
+  return data;
 }
 
-// ─── Generation history — thumbnails of past AI Revamp results ───────────────
 export async function getGenerationHistory() {
-  const raw = await AsyncStorage.getItem(HISTORY_KEY);
-  return raw ? JSON.parse(raw) : [];
+  const user = await currentUser();
+  const { data, error } = await supabase
+    .from('generation_history')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(HISTORY_LIMIT);
+  throwIfError(error);
+  return Promise.all((data || []).map(async row => ({
+    id: row.id,
+    image: await signedUrl(BUCKETS.history, row.image_path),
+    imagePath: row.image_path,
+    createdAt: row.created_at,
+  })));
 }
 
 export async function addGenerationToHistory(image) {
-  const history = await getGenerationHistory();
-  const entry = { id: Date.now().toString(), image, createdAt: new Date().toISOString() };
-  const next = [entry, ...history].slice(0, HISTORY_LIMIT);
-  await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  return next;
+  const user = await currentUser();
+  const id = uuid();
+  const path = `${user.id}/${id}.jpg`;
+  await uploadBase64(BUCKETS.history, path, image, 'image/jpeg');
+  const { error } = await supabase
+    .from('generation_history')
+    .insert({ id, user_id: user.id, image_path: path });
+  if (error) {
+    await removeStorageObjects(BUCKETS.history, [path]);
+    throw error;
+  }
+
+  const { data: overflow, error: overflowError } = await supabase
+    .from('generation_history')
+    .select('id, image_path')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .range(HISTORY_LIMIT, 1000);
+  throwIfError(overflowError);
+  if (overflow?.length) {
+    const { error: deleteError } = await supabase
+      .from('generation_history')
+      .delete()
+      .in('id', overflow.map(entry => entry.id));
+    throwIfError(deleteError);
+    await removeStorageObjects(BUCKETS.history, overflow.map(entry => entry.image_path));
+  }
+  return getGenerationHistory();
 }
 
-// ─── Feed posts — setups the user has published to the Home feed ─────────────
-// Posts intentionally do NOT embed the setup photo (that base64 can be hundreds
-// of KB and would blow AsyncStorage's ~2MB row cap after a few posts). Instead
-// each post keeps a `setupId`; the feed hydrates the photo from getSetups() at
-// render time. This maps cleanly onto a future `posts` table + storage URL.
-const POSTS_KEY = 'mysetup_posts';
-const POSTS_LIMIT = 50;
+function profileIdentity(profile, userId) {
+  const username = profile?.username || `user-${String(userId).slice(0, 8)}`;
+  const displayName = profile?.display_name || username;
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || 'ME';
+  return { username, displayName, initials };
+}
 
 export async function getPosts() {
-  const raw = await AsyncStorage.getItem(POSTS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  await currentUser();
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  throwIfError(error);
+  const rows = data || [];
+  if (rows.length === 0) return [];
+
+  const setupIds = [...new Set(rows.map(row => row.setup_id))];
+  const userIds = [...new Set(rows.map(row => row.user_id))];
+  const [{ data: setupRows, error: setupsError }, { data: profileRows, error: profilesError }] = await Promise.all([
+    supabase.from('setups').select('*').in('id', setupIds),
+    supabase
+      .from('profiles')
+      .select('id, username, display_name, bio, avatar_path, banner_path, account_private')
+      .in('id', userIds),
+  ]);
+  throwIfError(setupsError);
+  throwIfError(profilesError);
+
+  const mappedSetups = await Promise.all((setupRows || []).map(mapSetup));
+  const setupById = new Map(mappedSetups.map(setup => [setup.id, setup]));
+  const allItemIds = [...new Set(mappedSetups.flatMap(setupItemIds))];
+  let mappedItems = [];
+  if (allItemIds.length > 0) {
+    const { data: itemRows, error: itemsError } = await supabase
+      .from('items')
+      .select('*')
+      .in('id', allItemIds);
+    throwIfError(itemsError);
+    mappedItems = await Promise.all((itemRows || []).map(mapItem));
+  }
+  const itemById = new Map(mappedItems.map(item => [item.id, item]));
+  const profileById = new Map((profileRows || []).map(profile => [profile.id, profile]));
+
+  return rows.map(row => {
+    const setup = setupById.get(row.setup_id) || null;
+    const ids = setupItemIds(setup);
+    const boardItems = ids.map(id => itemById.get(id)).filter(Boolean);
+    const identity = profileIdentity(profileById.get(row.user_id), row.user_id);
+    return {
+      id: row.id,
+      setupId: row.setup_id,
+      userId: row.user_id,
+      username: identity.username,
+      handle: `@${identity.username}`,
+      initials: identity.initials,
+      title: row.title,
+      caption: row.caption || '',
+      description: row.caption || (row.tags || []).join(' · '),
+      tags: row.tags || [],
+      likes: row.likes || 0,
+      comments: row.comments || 0,
+      trending: false,
+      items: ids.length,
+      setupsCount: 1,
+      followers: '0',
+      gradient: ['#4A4368', '#8B5A56', '#C08552'],
+      dots: setup?.dots || [],
+      slots: {},
+      extras: [],
+      photo: setup?.photo || null,
+      extraPhotos: setup?.extraPhotos || [],
+      boardSetup: setup,
+      boardItems,
+      createdAt: row.created_at,
+    };
+  });
 }
 
 export async function addPost(post) {
-  const posts = await getPosts();
-  const entry = { id: Date.now().toString(), createdAt: new Date().toISOString(), ...post };
-  const next = [entry, ...posts].slice(0, POSTS_LIMIT);
-  await AsyncStorage.setItem(POSTS_KEY, JSON.stringify(next));
-  return entry;
+  const user = await currentUser();
+  const { data: setup, error: setupError } = await supabase
+    .from('setups')
+    .select('slots')
+    .eq('id', post.setupId)
+    .eq('user_id', user.id)
+    .single();
+  throwIfError(setupError);
+  await makeItemsPublic(Object.values(setup?.slots || {}));
+
+  const { data, error } = await supabase
+    .from('posts')
+    .insert({
+      user_id: user.id,
+      setup_id: post.setupId,
+      title: post.title || 'Untitled setup',
+      caption: post.caption || '',
+      tags: post.tags || [],
+    })
+    .select('*')
+    .single();
+  throwIfError(error);
+  return { ...post, id: data.id, createdAt: data.created_at };
 }
 
-// Removes any feed posts for a setup — used when that setup is deleted so it
-// doesn't linger on the feed.
 export async function deletePostsBySetup(setupId) {
-  const posts = await getPosts();
-  const next = posts.filter(p => p.setupId !== setupId);
-  if (next.length !== posts.length) {
-    await AsyncStorage.setItem(POSTS_KEY, JSON.stringify(next));
-  }
+  const user = await currentUser();
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('setup_id', setupId)
+    .eq('user_id', user.id);
+  throwIfError(error);
 }
 
-// Shapes a setup + the composer's form data into the post object the Home feed
-// and post-detail screens expect (see MOCK_SETUPS in HomeScreen).
 export function buildPostFromSetup(setup, items, data) {
-  const cats = (items || []).map(i => (i.product?.category || '').toLowerCase());
-  const has = kw => cats.some(c => c.includes(kw));
+  const categories = (items || []).map(item => (item.product?.category || '').toLowerCase());
+  const has = keyword => categories.some(category => category.includes(keyword));
   const slots = {
-    monitor:  has('monitor'),
+    monitor: has('monitor'),
     keyboard: has('keyboard'),
-    mouse:    has('mouse'),
-    tower:    has('pc') || has('tower') || has('server') || has('console') || has('laptop'),
+    mouse: has('mouse'),
+    tower: has('pc') || has('tower') || has('server') || has('console') || has('laptop'),
   };
   const tags = data.tags || [];
   const caption = (data.caption || '').trim();
   return {
     setupId: setup?.id,
-    // No account/profile system yet — every post is "you" until auth carries a
-    // real username. Swap these three for the signed-in profile later.
     username: 'you',
     handle: '@you',
     initials: 'ME',

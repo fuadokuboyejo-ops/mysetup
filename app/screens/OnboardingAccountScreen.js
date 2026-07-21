@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { signUp, signIn } from '../config/auth';
+import { signUp, signIn, resendSignupConfirmation } from '../config/auth';
 import { signInWithGoogle } from '../config/googleAuth';
 import { GoogleLogo, AppleLogo } from '../components/SocialIcons';
 
@@ -27,13 +27,16 @@ function Dots() {
   );
 }
 
-export default function OnboardingAccountScreen({ onContinue, onBack }) {
+export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState('signup'); // 'signup' | 'signin'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [pendingEmail, setPendingEmail] = useState(null);
+  const [resending, setResending] = useState(false);
 
   const isSignIn = mode === 'signin';
   const canSubmit = email.length > 0 && password.length >= 8 && !loading;
@@ -42,8 +45,9 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
     if (!canSubmit) return;
     setLoading(true);
     setError(null);
+    setNotice(null);
     const fn = isSignIn ? signIn : signUp;
-    const { user, error: err } = await fn(email, password);
+    const { user, session, error: err } = await fn(email, password);
     setLoading(false);
     if (err) {
       // Surface Supabase's message (bad password, already registered, email
@@ -51,7 +55,23 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
       setError(err);
       return;
     }
+    if (!session) {
+      setPendingEmail(email.trim());
+      setError(null);
+      return;
+    }
     onContinue({ email, user });
+  };
+
+  const handleResend = async () => {
+    if (!pendingEmail || resending) return;
+    setResending(true);
+    setError(null);
+    setNotice(null);
+    const { error: resendError } = await resendSignupConfirmation(pendingEmail);
+    setResending(false);
+    if (resendError) setError(resendError);
+    else setNotice('Verification email sent again. Open it on this device.');
   };
 
   // Native Google Sign-In. Requires a development build (does not work in Expo
@@ -155,6 +175,19 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
             </View>
 
             {error && <Text style={styles.error}>{error}</Text>}
+            {notice && <Text style={styles.notice}>{notice}</Text>}
+
+            {pendingEmail && (
+              <View style={styles.verifyBox}>
+                <Text style={styles.verifyTitle}>Check your email</Text>
+                <Text style={styles.verifyText}>
+                  We sent a verification link to {pendingEmail}. Open it on this device to continue.
+                </Text>
+                <TouchableOpacity onPress={handleResend} disabled={resending} activeOpacity={0.75}>
+                  <Text style={styles.resendText}>{resending ? 'sending…' : 'resend verification email'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
               style={[styles.cta, !canSubmit && styles.ctaDisabled]}
@@ -206,13 +239,12 @@ export default function OnboardingAccountScreen({ onContinue, onBack }) {
               <Text style={styles.signinLink}>{isSignIn ? 'create one' : 'sign in'}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.skipBtn}
-            onPress={() => onContinue({})}
-            hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
-          >
-            <Text style={styles.skipText}>skip for now</Text>
-          </TouchableOpacity>
+
+          {onSkip && (
+            <TouchableOpacity style={styles.skipBtn} onPress={onSkip} activeOpacity={0.7}>
+              <Text style={styles.skipText}>skip for now</Text>
+            </TouchableOpacity>
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -286,6 +318,11 @@ const styles = StyleSheet.create({
   showBtn: { color: C.purple, fontSize: 14, fontWeight: '600', marginLeft: 12 },
 
   error: { color: '#D64545', fontSize: 13, marginTop: 16, lineHeight: 18 },
+  notice: { color: '#347A55', fontSize: 13, marginTop: 16, lineHeight: 18 },
+  verifyBox: { marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: '#F2F0FF' },
+  verifyTitle: { color: C.ink, fontSize: 15, fontWeight: '700' },
+  verifyText: { color: C.body, fontSize: 13, lineHeight: 19, marginTop: 5 },
+  resendText: { color: C.purple, fontSize: 13, fontWeight: '700', marginTop: 12 },
 
   cta: {
     marginTop: 24, backgroundColor: C.ink,

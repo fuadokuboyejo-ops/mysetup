@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { View, Alert, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Asset } from 'expo-asset';
+import * as Linking from 'expo-linking';
+import LoadingScreen from './components/LoadingScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import OnboardingBoardScreen from './screens/OnboardingBoardScreen';
 import OnboardingCameraScreen from './screens/OnboardingCameraScreen';
@@ -11,8 +14,17 @@ import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
 import { createSetup, getIsPremium, addSetupItem } from './config/setup';
-import { API_BASE } from './config/api';
+import { supabase } from './config/supabase';
+import { handleAuthRedirect } from './config/auth';
+import { imageUri } from './config/media';
+import {
+  TUTORIAL_STEPS, initTutorial, advanceTutorial, jumpTutorial, completeTutorial,
+  skipTutorial, isTutorialActive, useTutorialState,
+} from './config/tutorial';
+import TutorialCelebration from './components/TutorialCelebration';
+import TutorialEndScreen from './screens/TutorialEndScreen';
 import HomeScreen from './screens/HomeScreen';
+import SearchScreen from './screens/SearchScreen';
 import ProductPickerScreen from './screens/ProductPickerScreen';
 import CameraScreen from './screens/CameraScreen';
 import BoardBuilderScreen from './screens/BoardBuilderScreen';
@@ -20,11 +32,40 @@ import GearReceiptScreen from './screens/GearReceiptScreen';
 import SetupScreen from './screens/SetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import RevampMenuScreen from './screens/RevampMenuScreen';
+import RevampSetupPickerScreen from './screens/RevampSetupPickerScreen';
 import RevampCameraRollScreen from './screens/RevampCameraRollScreen';
 import RevampScreen from './screens/RevampScreen';
 import RevampPaywallScreen from './screens/RevampPaywallScreen';
 
+const LOADING_SCREEN = require('./assets/loadingscreen.mp4');
+
+// Warmed up on launch so the branding/onboarding media doesn't pop in. The
+// loading screen shows while these download (they're served over the network in
+// Expo Go on first use).
+const PRELOAD_ASSETS = [
+  LOADING_SCREEN,
+  require('./assets/mascot.gif'),
+  require('./assets/mascot_head.png'),
+  require('./assets/onboarding_1.mp4'),
+  require('./assets/peeking_bot.png'),
+  require('./assets/end_of_tutorial.gif'),
+  require('./assets/end_of_tutorail_loop.gif'),
+  require('./assets/board.gif'),
+  require('./assets/camera.gif'),
+  require('./assets/airevamp.gif'),
+  require('./assets/buildboard.gif'),
+  require('./assets/paywall.gif'),
+  require('./assets/subscreen.gif'),
+];
+
+// Dev-only: start on the onboarding flow even when a session already exists, so
+// the whole first-run journey (onboarding → tutorial) can be walked without
+// signing out. Set to false for normal signed-in launches. Ignored in prod.
+const DEV_FORCE_ONBOARDING = true;
+
 export default function App() {
+  // Gate the app behind an initial asset-preload + setup load.
+  const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState('onboarding');
   const [photoUri, setPhotoUri] = useState(null);
   const [photoBase64, setPhotoBase64] = useState(null);
@@ -47,8 +88,81 @@ export default function App() {
   const [revampAutoGenerate, setRevampAutoGenerate] = useState(false);
   const [revampDraftPhoto, setRevampDraftPhoto] = useState(null);
   const [revampDraftSetup, setRevampDraftSetup] = useState(null);
+  // First-run tutorial: the user's first cutout, held for the celebration
+  // moments ("background gone ✨" → board drop → all set).
+  const [tutorialCutout, setTutorialCutout] = useState(null);
+  const tutorial = useTutorialState();
+  const tutorialStepId = tutorial.status === 'active' ? TUTORIAL_STEPS[tutorial.stepIndex]?.id : null;
 
-  useEffect(() => { getIsPremium().then(setIsPremiumState); }, []);
+  // The tutorial starts the first time the user lands on the feed — after
+  // onboarding or straight away for returning-but-untutored accounts.
+  useEffect(() => {
+    if (ready && screen === 'home') initTutorial();
+  }, [ready, screen]);
+
+  useEffect(() => {
+    let active = true;
+
+    const prepareApp = async () => {
+      // Download each asset as its own task. Promise.allSettled keeps the loading
+      // screen mounted until every download has either completed or failed;
+      // one bad asset can no longer reveal the app while the others are loading.
+      const assetTasks = PRELOAD_ASSETS.map(module => Asset.fromModule(module).downloadAsync());
+      const [assetResults, sessionResult] = await Promise.all([
+        Promise.allSettled(assetTasks),
+        supabase.auth.getSession(),
+      ]);
+      if (!active) return;
+
+      const session = sessionResult.data?.session || null;
+      if (session) {
+        try {
+          setIsPremiumState(await getIsPremium());
+        } catch (error) {
+          console.warn('[app] premium status load failed:', error.message);
+        }
+        // Dev flag keeps you on the onboarding flow to test the full first-run.
+        if (!(__DEV__ && DEV_FORCE_ONBOARDING)) setScreen('home');
+      }
+
+      assetResults.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.warn(`[app] asset preload failed at index ${index}:`, result.reason?.message || result.reason);
+        }
+      });
+      setReady(true);
+    };
+
+    prepareApp();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const openAuthLink = async (url) => {
+      const result = await handleAuthRedirect(url);
+      if (!active || !result.handled) return;
+      if (result.error) {
+        Alert.alert('Email verification failed', result.error);
+        return;
+      }
+      if (result.session) {
+        try {
+          setIsPremiumState(await getIsPremium());
+        } catch {
+          setIsPremiumState(false);
+        }
+        setScreen(current => current === 'onboarding-account' ? 'onboarding-founder' : 'home');
+      }
+    };
+
+    Linking.getInitialURL().then(url => { if (url) openAuthLink(url); });
+    const subscription = Linking.addEventListener('url', event => openAuthLink(event.url));
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   const openRevamp = () => setScreen(isPremium ? 'revamp-menu' : 'revamp-paywall');
 
@@ -57,15 +171,12 @@ export default function App() {
   // item, then returns to the picker so the user can scan the next thing.
   const attemptCutout = async (photo) => {
     try {
-      const res = await fetch(`${API_BASE}/api/remove-bg`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photo }),
+      // Hits the Supabase Edge Function (functions/remove-bg), which holds the
+      // remove.bg key server-side. invoke() attaches the signed-in user's JWT.
+      const { data, error } = await supabase.functions.invoke('remove-bg', {
+        body: { photo },
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.image) return data.image;
-      }
+      if (!error && data?.image) return data.image;
     } catch {
       // fall through to the retry / skip prompt below
     }
@@ -75,7 +186,9 @@ export default function App() {
   const finishAddItem = async (product, image, isCutout) => {
     try {
       await addSetupItem(activeSetup?.id || 'default', product, image, isCutout);
-      setScreen('picker');
+      // During the tutorial the celebration flies the cutout into the Profile
+      // tab, so land on Home where the bottom nav is visible behind it.
+      setScreen(isTutorialActive() ? 'home' : 'picker');
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -84,9 +197,13 @@ export default function App() {
   };
 
   const addScannedItem = async (product) => {
+    advanceTutorial('receipt-save'); // saving the receipt completes tutorial step 4
     setSaving(true);
     const cutImage = await attemptCutout(photoBase64);
     if (cutImage) {
+      // Hold the user's first cutout so the tutorial can celebrate it —
+      // "background gone ✨", then drop it into a board slot.
+      if (isTutorialActive()) setTutorialCutout(cutImage);
       await finishAddItem(product, cutImage, true);
       return;
     }
@@ -99,7 +216,16 @@ export default function App() {
       'This item will still be saved to your library, but it needs a clean cutout before it can go on your board.',
       [
         { text: 'Try again', onPress: () => addScannedItem(product) },
-        { text: 'Save without cutout', onPress: () => { setSaving(true); finishAddItem(product, photoBase64, false); } },
+        {
+          text: 'Save without cutout',
+          onPress: () => {
+            // No cutout to celebrate — skip the reveal/board moments and land
+            // on the finale so the tutorial still closes out warmly.
+            jumpTutorial('all-set');
+            setSaving(true);
+            finishAddItem(product, photoBase64, false);
+          },
+        },
         { text: 'Cancel', style: 'cancel' },
       ],
     );
@@ -128,9 +254,12 @@ export default function App() {
     setScreen('board-builder');
   };
 
+  // Last step of onboarding — build the first board, then drop the user into the
+  // feed rather than the setup screen, so they land on the app's main surface.
   const startFirstBuild = async () => {
     const setup = await createSetup('My Setup', 'pc');
     setActiveSetup(setup);
+    setAfterBoardBuilder('home');
     setScreen('board-builder');
   };
 
@@ -190,7 +319,6 @@ export default function App() {
       return (
         <OnboardingScreen
           onContinue={() => setScreen('onboarding-board')}
-          onBack={() => setScreen('home')}
         />
       );
     }
@@ -239,6 +367,7 @@ export default function App() {
         <OnboardingAccountScreen
           onContinue={(data) => setScreen('onboarding-founder')}
           onBack={() => setScreen('onboarding-style')}
+          onSkip={() => setScreen('home')}
         />
       );
     }
@@ -261,7 +390,7 @@ export default function App() {
       return (
         <ProductPickerScreen
           onSelect={(type, guide) => goToCamera(type, guide)}
-          onBack={() => setScreen(activeSetup ? 'setup' : 'home')}
+          onBack={() => setScreen('home')}
           onGoToLibrary={() => setScreen('profile')}
           onPhotoPicked={(uri, base64, type, guide) => {
             setProductType(type);
@@ -274,6 +403,9 @@ export default function App() {
           onRequirePremium={() => setScreen('revamp-paywall')}
         />
       );
+    }
+    if (screen === 'search') {
+      return <SearchScreen onClose={() => setScreen('home')} />;
     }
     if (screen === 'camera') {
       return (
@@ -302,6 +434,11 @@ export default function App() {
           onCancel={() => {
             if (afterBoardBuilder === 'revamp-camera-roll') {
               setScreen('revamp-camera-roll');
+              setAfterBoardBuilder('setup');
+            } else if (afterBoardBuilder === 'home') {
+              // Backing out of the onboarding build still lands on the feed —
+              // onboarding is over either way, so don't strand them in Profile.
+              setScreen('home');
               setAfterBoardBuilder('setup');
             } else {
               setScreen('profile');
@@ -344,7 +481,20 @@ export default function App() {
           onDesignFromScratch={designFromScratch}
           onDifferentGear={(photo) => { setRevampBasePhoto(photo || null); setRevampAutoGenerate(false); setScreen('revamp'); }}
           onCameraRoll={openRevampCameraRoll}
-          onExistingSetup={() => setScreen('profile')}
+          onExistingSetup={() => setScreen('revamp-setup-picker')}
+        />
+      );
+    }
+    if (screen === 'revamp-setup-picker') {
+      return (
+        <RevampSetupPickerScreen
+          onBack={() => setScreen('revamp-menu')}
+          onSelect={(setup) => {
+            setActiveSetup(setup);
+            setRevampBasePhoto(null);
+            setRevampAutoGenerate(false);
+            setScreen('revamp');
+          }}
         />
       );
     }
@@ -396,30 +546,52 @@ export default function App() {
         onStartScan={() => setScreen('picker')}
         onViewSetup={() => setScreen('profile')}
         onRevamp={openRevamp}
+        onSearch={() => setScreen('search')}
       />
     );
   }
 
+  if (!ready || saving) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.loadingContainer}>
+          <StatusBar hidden />
+          <LoadingScreen style={styles.loadingMedia} />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
+  // Tutorial cutout-reveal beat — a modal that flies the cutout into the
+  // Profile tab over whatever screen the flow landed on.
+  const showCutoutReveal = tutorialStepId === 'cutout-reveal' && tutorialCutout;
+
+  const closeCelebration = (end) => {
+    end();
+    setTutorialCutout(null);
+  };
+
   return (
     <SafeAreaProvider>
-      {renderScreen()}
-      {saving && (
-        <View style={styles.savingOverlay}>
-          <ActivityIndicator color="#fff" size="large" />
-          <Text style={styles.savingText}>Adding to your setup…</Text>
-        </View>
+      {/* The finale is a whole page of its own — it replaces the board rather
+          than layering over it. */}
+      {tutorialStepId === 'all-set'
+        ? <TutorialEndScreen onDone={() => closeCelebration(completeTutorial)} />
+        : renderScreen()}
+      {showCutoutReveal && (
+        <TutorialCelebration
+          stepId={tutorialStepId}
+          cutoutUri={imageUri(tutorialCutout, 'image/png')}
+          onAdvance={advanceTutorial}
+          onDone={() => closeCelebration(completeTutorial)}
+          onSkip={() => closeCelebration(skipTutorial)}
+        />
       )}
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  savingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-  },
-  savingText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  loadingContainer: { flex: 1, backgroundColor: '#000000', overflow: 'hidden' },
+  loadingMedia: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
 });

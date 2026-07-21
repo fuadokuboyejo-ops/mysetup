@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform, Animated,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Platform, Animated, Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MiniBoard } from './HomeScreen';
 import PulsingDot from '../components/PulsingDot';
 import BoardPreview from '../components/BoardPreview';
 import DotCard from '../components/DotCard';
+import PhotoCarousel from '../components/PhotoCarousel';
+import ProductDetailScreen from './ProductDetailScreen';
 
 const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 
@@ -18,7 +20,8 @@ const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'seri
 // Sections stagger in on mount: creator row, title+tags, photo, the board, extras.
 const SECTION_COUNT = 5;
 
-export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
+export default function SetupPostScreen({ post: initialPost, onBack, onOpenCreator }) {
+  const [post, setPost] = useState(initialPost);
   const [tagsOn, setTagsOn] = useState(true);
   // The photo tag whose floating card is open (tap a dot to toggle).
   const [selectedDot, setSelectedDot] = useState(null);
@@ -26,14 +29,20 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
   // ONLY that tag (highlighted) and the item is shown under the board instead of
   // a floating card.
   const [boardSel, setBoardSel] = useState(null);
+  const [productDetailItem, setProductDetailItem] = useState(null);
   // Natural aspect ratio of the photo — render at this with 'contain' so the
   // whole image shows and tags land where they were placed (not compressed).
   const [photoAspect, setPhotoAspect] = useState(null);
+  // Extra photos beyond the main tagged shot — shown read-only here; they're
+  // added/removed in the post composer.
+  const extraPhotos = post.extraPhotos || [];
   const selectedItem = selectedDot
     ? (post.boardItems || []).find(i => i.id === selectedDot.libraryItemId)
     : null;
   const sectionOpacity = useRef([...Array(SECTION_COUNT)].map(() => new Animated.Value(0))).current;
   const sectionTranslate = useRef([...Array(SECTION_COUNT)].map(() => new Animated.Value(22))).current;
+
+  useEffect(() => setPost(initialPost), [initialPost]);
 
   useEffect(() => {
     Animated.stagger(90, sectionOpacity.map((opacity, i) => Animated.parallel([
@@ -92,51 +101,57 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
             </View>
           </Animated.View>
 
-          {/* Hero photo with tagged dots — natural aspect + 'contain' so the
-              whole image shows and tags land where they were placed. */}
-          <Animated.View style={[styles.photoWrap, photoAspect ? { aspectRatio: photoAspect } : null, sectionStyle(2)]}>
-            {post.photo ? (
-              <Image
-                source={{ uri: `data:image/jpeg;base64,${post.photo}` }}
-                style={StyleSheet.absoluteFill}
-                contentFit="contain"
-                onLoad={(e) => {
-                  const s = e?.source;
-                  if (s?.width && s?.height) setPhotoAspect(s.width / s.height);
-                }}
-              />
-            ) : (
-              <LinearGradient colors={post.gradient} style={StyleSheet.absoluteFill} />
-            )}
-            {tagsOn && (boardSel ? (
-              // A board item is selected — show only its tag, highlighted.
-              <PulsingDot
-                key={boardSel.dot.id}
-                x={boardSel.dot.x}
-                y={boardSel.dot.y}
-                index={0}
-                selected
-                onPress={() => setBoardSel(null)}
-              />
-            ) : (
-              post.dots.map((d, i) => (
-                <PulsingDot
-                  key={d.id ?? i}
-                  x={d.x}
-                  y={d.y}
-                  index={i}
-                  selected={selectedDot?.id === d.id}
-                  onPress={() => setSelectedDot(prev => (prev?.id === d.id ? null : d))}
-                />
-              ))
-            ))}
-            {tagsOn && !boardSel && (
-              <DotCard item={selectedItem} dot={selectedDot} onClose={() => setSelectedDot(null)} />
-            )}
-            <TouchableOpacity style={styles.tagsToggle} onPress={() => { setTagsOn(v => !v); setSelectedDot(null); setBoardSel(null); }} activeOpacity={0.85}>
-              <Text style={styles.tagsToggleIcon}>{tagsOn ? '◉' : '◯'}</Text>
-              <Text style={styles.tagsToggleText}>tags {tagsOn ? 'on' : 'off'}</Text>
-            </TouchableOpacity>
+          {/* Hero photo (with tagged dots) + any extra photos, as a swipeable
+              slideshow. Natural aspect + 'contain' on the hero so the whole image
+              shows and tags land where they were placed. */}
+          <Animated.View style={sectionStyle(2)}>
+            <PhotoCarousel
+              style={styles.carousel}
+              items={[
+                {
+                  base64: post.photo || undefined,
+                  gradient: post.photo ? undefined : post.gradient,
+                  overlay: (
+                    <>
+                      {tagsOn && (boardSel ? (
+                        <PulsingDot
+                          key={boardSel.dot.id}
+                          x={boardSel.dot.x}
+                          y={boardSel.dot.y}
+                          index={0}
+                          selected
+                          onPress={() => setBoardSel(null)}
+                        />
+                      ) : (
+                        post.dots.map((d, i) => (
+                          <PulsingDot
+                            key={d.id ?? i}
+                            x={d.x}
+                            y={d.y}
+                            index={i}
+                            selected={selectedDot?.id === d.id}
+                            onPress={() => setSelectedDot(prev => (prev?.id === d.id ? null : d))}
+                          />
+                        ))
+                      ))}
+                      {tagsOn && !boardSel && (
+                        <DotCard
+                          item={selectedItem}
+                          dot={selectedDot}
+                          onClose={() => setSelectedDot(null)}
+                          onViewProduct={setProductDetailItem}
+                        />
+                      )}
+                      <TouchableOpacity style={styles.tagsToggle} onPress={() => { setTagsOn(v => !v); setSelectedDot(null); setBoardSel(null); }} activeOpacity={0.85}>
+                        <Text style={styles.tagsToggleIcon}>{tagsOn ? '◉' : '◯'}</Text>
+                        <Text style={styles.tagsToggleText}>tags {tagsOn ? 'on' : 'off'}</Text>
+                      </TouchableOpacity>
+                    </>
+                  ),
+                },
+                ...extraPhotos.map(p => ({ base64: p })),
+              ]}
+            />
           </Animated.View>
 
           <Animated.View style={sectionStyle(3)}>
@@ -169,7 +184,12 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
             {/* The item selected from the board — shown here beneath it */}
             {boardSel && (
               <View style={styles.boardSelectedItem}>
-                <DotCard inline item={boardSel.item} onClose={() => setBoardSel(null)} />
+                <DotCard
+                  inline
+                  item={boardSel.item}
+                  onClose={() => setBoardSel(null)}
+                  onViewProduct={setProductDetailItem}
+                />
               </View>
             )}
           </Animated.View>
@@ -192,6 +212,23 @@ export default function SetupPostScreen({ post, onBack, onOpenCreator }) {
           )}
         </ScrollView>
       </SafeAreaView>
+
+      <Modal visible={!!productDetailItem} animationType="slide" onRequestClose={() => setProductDetailItem(null)}>
+        <SafeAreaProvider>
+          <ProductDetailScreen
+            item={productDetailItem}
+            onBack={() => setProductDetailItem(null)}
+            onOpenSetup={({ post: selectedPost }) => {
+              setProductDetailItem(null);
+              setPost(selectedPost);
+              setSelectedDot(null);
+              setBoardSel(null);
+              setPhotoAspect(null);
+              setTagsOn(true);
+            }}
+          />
+        </SafeAreaProvider>
+      </Modal>
     </View>
   );
 }
@@ -247,6 +284,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20, aspectRatio: 4 / 3, borderRadius: 18, overflow: 'hidden', position: 'relative',
     backgroundColor: '#EAE8E2',
   },
+  carousel: { marginHorizontal: 20, borderRadius: 18, backgroundColor: '#EAE8E2' },
   tagsToggle: {
     position: 'absolute', top: 14, right: 14,
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -255,6 +293,11 @@ const styles = StyleSheet.create({
   },
   tagsToggleIcon: { color: '#FFFFFF', fontSize: 12 },
   tagsToggleText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+
+  extraPhotoWrap: {
+    marginHorizontal: 20, marginTop: 12, aspectRatio: 4 / 3,
+    borderRadius: 18, overflow: 'hidden', position: 'relative', backgroundColor: '#EAE8E2',
+  },
 
   sectionDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, marginTop: 28, marginBottom: 16 },
   sectionDividerLine: { flex: 1, height: 1, backgroundColor: C.border },

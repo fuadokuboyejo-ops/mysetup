@@ -12,7 +12,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.106.0",
     "@videobgremover/sdk": "^0.1.8",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
