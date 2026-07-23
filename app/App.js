@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Alert, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import * as Linking from 'expo-linking';
 import LoadingScreen from './components/LoadingScreen';
+import OnboardingOpenerScreen from './screens/OnboardingOpenerScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import OnboardingBoardScreen from './screens/OnboardingBoardScreen';
 import OnboardingCameraScreen from './screens/OnboardingCameraScreen';
@@ -12,13 +13,15 @@ import OnboardingSetupTypeScreen from './screens/OnboardingSetupTypeScreen';
 import OnboardingStyleScreen from './screens/OnboardingStyleScreen';
 import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
+import OnboardingNotificationsScreen from './screens/OnboardingNotificationsScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
 import { createSetup, getIsPremium, addSetupItem } from './config/setup';
+import { initPurchases } from './config/purchases';
 import { supabase } from './config/supabase';
 import { handleAuthRedirect } from './config/auth';
 import { imageUri } from './config/media';
 import {
-  TUTORIAL_STEPS, initTutorial, advanceTutorial, jumpTutorial, completeTutorial,
+  TUTORIAL_STEPS, initTutorial, preloadTutorial, advanceTutorial, jumpTutorial, completeTutorial,
   skipTutorial, isTutorialActive, useTutorialState,
 } from './config/tutorial';
 import TutorialCelebration from './components/TutorialCelebration';
@@ -47,6 +50,7 @@ const PRELOAD_ASSETS = [
   require('./assets/mascot.gif'),
   require('./assets/mascot_head.png'),
   require('./assets/onboarding_1.mp4'),
+  require('./assets/onboardingnew4.mp4'),
   require('./assets/peeking_bot.png'),
   require('./assets/end_of_tutorial.gif'),
   require('./assets/end_of_tutorail_loop.gif'),
@@ -94,11 +98,27 @@ export default function App() {
   const tutorial = useTutorialState();
   const tutorialStepId = tutorial.status === 'active' ? TUTORIAL_STEPS[tutorial.stepIndex]?.id : null;
 
+  // Configure RevenueCat once on launch (logs whether it connected).
+  useEffect(() => { initPurchases(); }, []);
+
   // The tutorial starts the first time the user lands on the feed — after
   // onboarding or straight away for returning-but-untutored accounts.
   useEffect(() => {
     if (ready && screen === 'home') initTutorial();
   }, [ready, screen]);
+
+  // Prompt for notifications right after the first-run tutorial. We watch the
+  // tutorial's active → done transition rather than hooking each exit, because
+  // the tour can be finished (the finale) OR skipped from any of its screens —
+  // this is the one place every path funnels through, so the opt-in shows
+  // either way. Returning users who already finished go idle → done (never
+  // 'active'), so this correctly doesn't fire for them.
+  const prevTutorialStatus = useRef(tutorial.status);
+  useEffect(() => {
+    const wasActive = prevTutorialStatus.current === 'active';
+    prevTutorialStatus.current = tutorial.status;
+    if (wasActive && tutorial.status === 'done') setScreen('notifications-optin');
+  }, [tutorial.status]);
 
   useEffect(() => {
     let active = true;
@@ -111,6 +131,10 @@ export default function App() {
       const [assetResults, sessionResult] = await Promise.all([
         Promise.allSettled(assetTasks),
         supabase.auth.getSession(),
+        // Read the tutorial-completed flag now, while the loading screen is up,
+        // so initTutorial can flip the tour on synchronously later — no flash of
+        // the bare feed on the onboarding → tutorial handoff.
+        preloadTutorial(),
       ]);
       if (!active) return;
 
@@ -122,7 +146,10 @@ export default function App() {
           console.warn('[app] premium status load failed:', error.message);
         }
         // Dev flag keeps you on the onboarding flow to test the full first-run.
-        if (!(__DEV__ && DEV_FORCE_ONBOARDING)) setScreen('home');
+        if (!(__DEV__ && DEV_FORCE_ONBOARDING)) {
+          initTutorial(); // decide the tour before Home first paints
+          setScreen('home');
+        }
       }
 
       assetResults.forEach((result, index) => {
@@ -165,6 +192,14 @@ export default function App() {
   }, []);
 
   const openRevamp = () => setScreen(isPremium ? 'revamp-menu' : 'revamp-paywall');
+
+  // Land on the feed and kick off the first-run tutorial in the SAME update, so
+  // the store flip and the screen swap batch into one render — Home's first
+  // frame already carries the tutorial overlay instead of flashing bare first.
+  const goToFeed = () => {
+    initTutorial();
+    setScreen('home');
+  };
 
   // ── Adding a scanned / manually-entered item to the library ────────────────
   // (Replaces the old Results screen.) Runs the background cutout, saves the
@@ -317,8 +352,16 @@ export default function App() {
   function renderScreen() {
     if (screen === 'onboarding') {
       return (
+        <OnboardingOpenerScreen
+          onContinue={() => setScreen('onboarding-intro')}
+        />
+      );
+    }
+    if (screen === 'onboarding-intro') {
+      return (
         <OnboardingScreen
           onContinue={() => setScreen('onboarding-board')}
+          onBack={() => setScreen('onboarding')}
         />
       );
     }
@@ -326,7 +369,7 @@ export default function App() {
       return (
         <OnboardingBoardScreen
           onContinue={() => setScreen('onboarding-camera')}
-          onBack={() => setScreen('onboarding')}
+          onBack={() => setScreen('onboarding-intro')}
         />
       );
     }
@@ -367,7 +410,7 @@ export default function App() {
         <OnboardingAccountScreen
           onContinue={(data) => setScreen('onboarding-founder')}
           onBack={() => setScreen('onboarding-style')}
-          onSkip={() => setScreen('home')}
+          onSkip={goToFeed}
         />
       );
     }
@@ -378,11 +421,21 @@ export default function App() {
         />
       );
     }
+    // Notification opt-in runs AFTER the first-run tutorial (see the tutorial-end
+    // effect below), so it's shown whether the user finishes or skips the tour.
+    // No back button — the tutorial is over, this is a terminal step into the feed.
+    if (screen === 'notifications-optin') {
+      return (
+        <OnboardingNotificationsScreen
+          onContinue={(prefs) => setScreen('home')}
+        />
+      );
+    }
     if (screen === 'onboarding-build-setup') {
       return (
         <OnboardingBuildSetupScreen
           onContinue={startFirstBuild}
-          onSkip={() => setScreen('home')}
+          onSkip={goToFeed}
         />
       );
     }
@@ -428,7 +481,10 @@ export default function App() {
           onDone={(setup) => {
             setActiveSetup(setup);
             if (afterBoardBuilder === 'revamp-camera-roll') setRevampDraftSetup(setup);
-            setScreen(afterBoardBuilder);
+            // Finishing the onboarding build drops the user on the feed — start
+            // the tutorial in the same update so it doesn't flash bare first.
+            if (afterBoardBuilder === 'home') { goToFeed(); }
+            else setScreen(afterBoardBuilder);
             setAfterBoardBuilder('setup');
           }}
           onCancel={() => {
@@ -438,7 +494,7 @@ export default function App() {
             } else if (afterBoardBuilder === 'home') {
               // Backing out of the onboarding build still lands on the feed —
               // onboarding is over either way, so don't strand them in Profile.
-              setScreen('home');
+              goToFeed();
               setAfterBoardBuilder('setup');
             } else {
               setScreen('profile');

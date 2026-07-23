@@ -147,17 +147,45 @@ export function isTutorialActive() {
 // the real experience. Ignored in production builds.
 const DEV_START_STEP = null;
 
+// The "tutorial already completed" flag, read once from AsyncStorage at startup
+// (see preloadTutorial) and cached here. Having it in memory lets initTutorial
+// flip the tutorial on synchronously — otherwise Home paints a frame before the
+// async read resolves and the first spotlight pops in a beat late (a visible
+// flash of the bare feed on the onboarding → tutorial handoff).
+let doneFlagLoaded = false;
+let tutorialDone = false;
+
+// Load the completion flag during the launch loading screen so initTutorial can
+// decide without awaiting. Safe to call more than once.
+export async function preloadTutorial() {
+  try {
+    tutorialDone = (await AsyncStorage.getItem(TUTORIAL_KEY)) === '1';
+  } catch {
+    tutorialDone = false;
+  }
+  doneFlagLoaded = true;
+}
+
 // Called when the user first lands on Home. Shows the tutorial exactly once —
 // except in dev, where it replays every launch (same convenience the old
 // coach mark had).
 export function initTutorial() {
   if (state.status !== 'idle') return;
+  const startIndex = __DEV__ && DEV_START_STEP ? Math.max(0, tutorialStepIndex(DEV_START_STEP)) : 0;
+  const activate = (done) =>
+    setState(!done || __DEV__ ? { status: 'active', stepIndex: startIndex } : { status: 'done', stepIndex: 0 });
+
+  // Preloaded at startup → decide synchronously so the first spotlight is on
+  // screen the instant Home mounts, with no flash of the bare feed.
+  if (doneFlagLoaded) {
+    activate(tutorialDone);
+    return;
+  }
+  // Not preloaded yet (shouldn't normally happen) — fall back to the async read.
   AsyncStorage.getItem(TUTORIAL_KEY)
     .then(value => {
       if (state.status !== 'idle') return;
-      const done = value === '1';
-      const startIndex = __DEV__ && DEV_START_STEP ? Math.max(0, tutorialStepIndex(DEV_START_STEP)) : 0;
-      setState(!done || __DEV__ ? { status: 'active', stepIndex: startIndex } : { status: 'done', stepIndex: 0 });
+      activate(value === '1');
     })
     .catch(() => {});
 }
@@ -184,6 +212,8 @@ export function jumpTutorial(id) {
 }
 
 function finish() {
+  tutorialDone = true;
+  doneFlagLoaded = true;
   setState({ status: 'done', stepIndex: TUTORIAL_STEPS.length });
   AsyncStorage.setItem(TUTORIAL_KEY, '1').catch(() => {});
 }
