@@ -1,19 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, StatusBar, Alert, ActivityIndicator, Animated, ScrollView,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { getProOfferings, purchasePackage, restorePurchases } from '../config/purchases';
 
-const MASCOT_INTRO = require('../assets/paywall.gif');
-const MASCOT_LOOP = require('../assets/paywall_loop.gif');
 const SUBSCREEN_GIF = require('../assets/subscreen.gif');
-
-const INTRO_DURATION_MS = 5700; // paywall.gif is 5900ms — start fade 200ms before end
-const CROSSFADE_MS = 200;
-const SUBSCREEN_DURATION_MS = 5900; // subscreen.gif's full run time — freeze on its last frame here
-const THANKS_DELAY_MS = 400; // let the frozen frame land before the message + button fade in
+const HERO_IMAGE = require('../assets/revamp_paywall_hero.png');
+const SUBSCREEN_DURATION_MS = 5900;
+const THANKS_DELAY_MS = 400;
 
 const FEATURES = [
   { text: 'Save and share your favorite looks', free: true },
@@ -23,55 +27,75 @@ const FEATURES = [
 ];
 
 const PLANS = {
-  yearly: { label: 'Yearly', price: '$39.99', period: '/year', sub: '$3.33/mo', save: 'Save 33%', trial: '3-day free trial, then $39.99/year' },
-  monthly: { label: 'Monthly', price: '$4.99', period: '/mo', sub: null, save: null, trial: '$4.99/mo, cancel any time' },
+  yearly: {
+    label: 'Yearly',
+    price: '$39.99',
+    period: '/year',
+    sub: '$3.33/mo',
+    save: 'Save 33%',
+    trial: '3-day free trial, then $39.99/year',
+  },
+  monthly: {
+    label: 'Monthly',
+    price: '$4.99',
+    period: '/mo',
+    sub: '3 days free',
+    trial: '3-day free trial, then $4.99/month',
+  },
 };
+
+function Check({ muted = false }) {
+  return (
+    <View style={[styles.check, muted && styles.checkMuted]}>
+      <Text style={styles.checkText}>✓</Text>
+    </View>
+  );
+}
 
 function CompareRow({ text, free, isLast }) {
   return (
     <View style={[styles.compareRow, isLast && styles.compareRowLast]}>
       <Text style={styles.compareFeatureText}>{text}</Text>
-      <View style={styles.compareCellFree}>
-        {free ? (
-          <View style={styles.checkCircleFree}>
-            <Text style={styles.checkIcon}>✓</Text>
-          </View>
-        ) : (
-          <Text style={styles.lockIcon}>🔒</Text>
-        )}
+      <View style={styles.compareCell}>
+        {free ? <Check muted /> : <Text style={styles.dash}>—</Text>}
       </View>
-      <View style={styles.compareCellPlus}>
-        <View style={styles.checkCircle}>
-          <Text style={styles.checkIcon}>✓</Text>
-        </View>
+      <View style={styles.compareCell}>
+        <Check />
       </View>
     </View>
   );
 }
 
-function PlanCard({ id, plan, selected, onPress }) {
+function PlanCard({ plan, selected, onPress }) {
   return (
-    <TouchableOpacity
-      style={[styles.planCard, selected && styles.planCardSelected]}
-      onPress={onPress}
-      activeOpacity={0.85}
-    >
-      {plan.save && (
-        <View style={styles.saveBadge}>
-          <Text style={styles.saveBadgeText}>{plan.save}</Text>
+    <View style={[styles.planShadow, selected && styles.planShadowSelected]}>
+      <TouchableOpacity
+        style={[styles.planCard, selected && styles.planCardSelected]}
+        onPress={onPress}
+        activeOpacity={0.85}
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+      >
+        {plan.save ? (
+          <View style={styles.saveBadge}>
+            <Text style={styles.saveBadgeText}>{plan.save}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.planTop}>
+          <Text style={styles.planLabel}>{plan.label}</Text>
+          <View style={[styles.radio, selected && styles.radioSelected]}>
+            {selected ? <View style={styles.radioDot} /> : null}
+          </View>
         </View>
-      )}
-      <View style={styles.planTop}>
-        <Text style={styles.planLabel}>{plan.label}</Text>
-        <View style={[styles.radio, selected && styles.radioSelected]}>
-          {selected && <View style={styles.radioDot} />}
-        </View>
-      </View>
-      <Text style={styles.planPrice}>
-        {plan.price}<Text style={styles.planPeriod}>{plan.period}</Text>
-      </Text>
-      {plan.sub && <Text style={styles.planSub}>{plan.sub}</Text>}
-    </TouchableOpacity>
+
+        <Text style={styles.planPrice}>
+          {plan.price}
+          <Text style={styles.planPeriod}>{plan.period}</Text>
+        </Text>
+        <Text style={styles.planSub}>{plan.sub}</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -79,9 +103,11 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
   const [selected, setSelected] = useState('yearly');
   const [loading, setLoading] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
-  // Live RevenueCat packages (annual/monthly) for the current offering. Null
-  // until loaded — the hardcoded PLANS copy stands in as the fallback.
   const [packages, setPackages] = useState({ yearly: null, monthly: null });
+
+  const subscreenRef = useRef(null);
+  const thanksOpacity = useRef(new Animated.Value(0)).current;
+  const thanksTranslate = useRef(new Animated.Value(14)).current;
 
   useEffect(() => {
     let active = true;
@@ -90,61 +116,30 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
       const byType = { yearly: null, monthly: null };
       for (const pkg of offering.availablePackages || []) {
         if (pkg.packageType === 'ANNUAL') byType.yearly = pkg;
-        else if (pkg.packageType === 'MONTHLY') byType.monthly = pkg;
+        if (pkg.packageType === 'MONTHLY') byType.monthly = pkg;
       }
       setPackages(byType);
     });
     return () => { active = false; };
   }, []);
 
-  // Merge live localized prices onto the design copy when RevenueCat has them.
   const displayPlans = {
-    yearly: packages.yearly ? { ...PLANS.yearly, price: packages.yearly.product.priceString } : PLANS.yearly,
-    monthly: packages.monthly ? { ...PLANS.monthly, price: packages.monthly.product.priceString } : PLANS.monthly,
+    yearly: packages.yearly
+      ? {
+          ...PLANS.yearly,
+          price: packages.yearly.product.priceString,
+          trial: `3-day free trial, then ${packages.yearly.product.priceString}/year`,
+        }
+      : PLANS.yearly,
+    monthly: packages.monthly
+      ? {
+          ...PLANS.monthly,
+          price: packages.monthly.product.priceString,
+          trial: `3-day free trial, then ${packages.monthly.product.priceString}/month`,
+        }
+      : PLANS.monthly,
   };
   const plan = displayPlans[selected];
-  const introOpacity = useRef(new Animated.Value(1)).current;
-  const starPop = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
-  const starTwinkle = useRef([0, 1, 2, 3].map(() => new Animated.Value(1))).current;
-  const subscreenRef = useRef(null);
-  const thanksOpacity = useRef(new Animated.Value(0)).current;
-  const thanksTranslate = useRef(new Animated.Value(14)).current;
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      Animated.timing(introOpacity, {
-        toValue: 0,
-        duration: CROSSFADE_MS,
-        useNativeDriver: true,
-      }).start();
-    }, INTRO_DURATION_MS);
-
-    // The mascot's face blushes pink partway through the intro gif — pop in
-    // little stars around the pricing card one by one, then let them twinkle.
-    const starTimer = setTimeout(() => {
-      Animated.stagger(180, starPop.map(a => Animated.spring(a, {
-        toValue: 1,
-        friction: 5,
-        useNativeDriver: true,
-      }))).start(() => {
-        starTwinkle.forEach((a, i) => {
-          Animated.loop(
-            Animated.sequence([
-              Animated.timing(a, { toValue: 0.35, duration: 650 + i * 140, useNativeDriver: true }),
-              Animated.timing(a, { toValue: 1, duration: 650 + i * 140, useNativeDriver: true }),
-            ]),
-          ).start();
-        });
-      });
-    }, INTRO_DURATION_MS);
-
-    return () => { clearTimeout(t); clearTimeout(starTimer); };
-  }, []);
-
-  const starStyle = i => ({
-    opacity: Animated.multiply(starPop[i], starTwinkle[i]),
-    transform: [{ scale: starPop[i].interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) }],
-  });
 
   const unlock = async () => {
     const pkg = packages[selected];
@@ -152,19 +147,22 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
       Alert.alert('Unavailable', 'Subscriptions aren’t available right now — please try again in a moment.');
       return;
     }
+
     setLoading(true);
     const { unlocked, cancelled, error } = await purchasePackage(pkg);
     setLoading(false);
-    if (cancelled) return;               // user backed out — no error to show
-    if (error) { Alert.alert('Purchase failed', error); return; }
+
+    if (cancelled) return;
+    if (error) {
+      Alert.alert('Purchase failed', error);
+      return;
+    }
     if (!unlocked) {
       Alert.alert('Almost there', 'Your purchase didn’t activate Pro. Try “Restore Subscription”.');
       return;
     }
-    setCelebrating(true);
 
-    // Let the gif play through once, then freeze it on its last frame for
-    // good (no auto-continue) — the user taps Continue to move on.
+    setCelebrating(true);
     setTimeout(() => {
       subscreenRef.current?.stopAnimating();
       Animated.parallel([
@@ -188,7 +186,10 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
     setLoading(true);
     const { unlocked, error } = await restorePurchases();
     setLoading(false);
-    if (unlocked) { onUnlock?.(); return; }
+    if (unlocked) {
+      onUnlock?.();
+      return;
+    }
     Alert.alert('Restore Subscription', error || 'No active subscription found for this account.');
   };
 
@@ -196,10 +197,19 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <Image ref={subscreenRef} source={SUBSCREEN_GIF} style={StyleSheet.absoluteFill} contentFit="cover" autoplay />
+        <Image
+          ref={subscreenRef}
+          source={SUBSCREEN_GIF}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          autoplay
+        />
         <SafeAreaView style={styles.celebrateSafe} pointerEvents="box-none">
           <Animated.View
-            style={[styles.thanksBlock, { opacity: thanksOpacity, transform: [{ translateY: thanksTranslate }] }]}
+            style={[
+              styles.thanksBlock,
+              { opacity: thanksOpacity, transform: [{ translateY: thanksTranslate }] },
+            ]}
             pointerEvents="none"
           >
             <View style={styles.thanksBadge}>
@@ -207,8 +217,8 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
             </View>
           </Animated.View>
           <Animated.View style={[styles.celebrateCtaWrap, { opacity: thanksOpacity }]}>
-            <TouchableOpacity style={styles.cta} onPress={onUnlock} activeOpacity={0.85}>
-              <Text style={styles.ctaText}>Continue</Text>
+            <TouchableOpacity style={styles.celebrateButton} onPress={onUnlock} activeOpacity={0.85}>
+              <Text style={styles.celebrateButtonText}>Continue</Text>
             </TouchableOpacity>
           </Animated.View>
         </SafeAreaView>
@@ -218,11 +228,17 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} activeOpacity={0.7}>
-            <Text style={styles.headerBack}>‹ Back</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onBack}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Close paywall"
+          >
+            <Text style={styles.closeText}>×</Text>
           </TouchableOpacity>
         </View>
 
@@ -233,59 +249,74 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
           bounces={false}
         >
           <View style={styles.hero}>
-            <View style={styles.mascotWrap}>
-              <Image source={MASCOT_LOOP} style={styles.mascot} contentFit="contain" autoplay />
-              <Animated.View style={[StyleSheet.absoluteFill, { opacity: introOpacity }]}>
-                <Image source={MASCOT_INTRO} style={styles.mascot} contentFit="contain" autoplay />
-              </Animated.View>
-            </View>
+            <Image source={HERO_IMAGE} style={styles.heroImage} contentFit="contain" />
           </View>
 
-          <View style={styles.bottomBlock}>
-            <Text style={styles.title}>Access all of AI Revamp</Text>
+          <Text style={styles.title}>Access all of AI Revamp</Text>
+          <Text style={styles.subtitle}>Build more ideas and see your dream setup come to life.</Text>
 
-          <View style={styles.compareCard}>
-            <View style={styles.plusColumnBg} />
-            <View style={styles.compareHeaderRow}>
-              <Text style={styles.compareTitle}>What you get</Text>
-              <Text style={styles.compareColLabelFree}>Free</Text>
-              <View style={styles.plusColHeader}>
-                <View style={styles.plusPillBadge}>
-                  <Text style={styles.plusPillText}>Plus</Text>
+          <Text style={styles.sectionLabel}>WHAT YOU GET</Text>
+          <View style={styles.cardShadow}>
+            <View style={styles.compareCard}>
+              <View style={styles.compareHeaderRow}>
+                <View style={styles.compareHeading}>
+                  <Text style={styles.compareTitle}>AI Revamp access</Text>
+                  <Text style={styles.compareCaption}>Everything you need to keep creating</Text>
+                </View>
+                <Text style={styles.compareColLabel}>FREE</Text>
+                <View style={styles.plusBadge}>
+                  <Text style={styles.plusBadgeText}>PLUS</Text>
                 </View>
               </View>
-            </View>
-            {FEATURES.map((f, i) => (
-              <CompareRow key={f.text} text={f.text} free={f.free} isLast={i === FEATURES.length - 1} />
-            ))}
-          </View>
 
-          <View style={styles.pricingWrap}>
-            <Animated.Text style={[styles.star, styles.starTL, starStyle(0)]}>✦</Animated.Text>
-            <Animated.Text style={[styles.star, styles.starTR, starStyle(1)]}>✧</Animated.Text>
-            <Animated.Text style={[styles.star, styles.starR, starStyle(2)]}>✦</Animated.Text>
-            <Animated.Text style={[styles.star, styles.starL, starStyle(3)]}>✧</Animated.Text>
-
-            <View style={styles.pricingCard}>
-              <View style={styles.plans}>
-                <PlanCard id="yearly" plan={displayPlans.yearly} selected={selected === 'yearly'} onPress={() => setSelected('yearly')} />
-                <PlanCard id="monthly" plan={displayPlans.monthly} selected={selected === 'monthly'} onPress={() => setSelected('monthly')} />
-              </View>
-
-              {selected === 'yearly' && <Text style={styles.nothingDue}>Nothing due today</Text>}
-
-              <TouchableOpacity style={styles.cta} onPress={unlock} disabled={loading} activeOpacity={0.85}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>Continue</Text>}
-              </TouchableOpacity>
-
-              <Text style={styles.trialText}>{plan.trial}</Text>
+              {FEATURES.map((feature, index) => (
+                <CompareRow
+                  key={feature.text}
+                  text={feature.text}
+                  free={feature.free}
+                  isLast={index === FEATURES.length - 1}
+                />
+              ))}
             </View>
           </View>
 
-            <TouchableOpacity onPress={restore} activeOpacity={0.7}>
-              <Text style={styles.restore}>Restore Subscription</Text>
+          <Text style={styles.sectionLabel}>CHOOSE YOUR PLAN</Text>
+          <View style={styles.plans}>
+            <PlanCard
+              plan={displayPlans.yearly}
+              selected={selected === 'yearly'}
+              onPress={() => setSelected('yearly')}
+            />
+            <PlanCard
+              plan={displayPlans.monthly}
+              selected={selected === 'monthly'}
+              onPress={() => setSelected('monthly')}
+            />
+          </View>
+
+          <View style={styles.dueRow}>
+            <View style={styles.dueDot} />
+            <Text style={styles.nothingDue}>Nothing due today</Text>
+          </View>
+
+          <View style={styles.ctaShadow}>
+            <TouchableOpacity
+              style={styles.cta}
+              onPress={unlock}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color={C.ink} />
+                : <Text style={styles.ctaText}>Start free trial</Text>}
             </TouchableOpacity>
           </View>
+
+          <Text style={styles.trialText}>{plan.trial}</Text>
+
+          <TouchableOpacity onPress={restore} disabled={loading} activeOpacity={0.7}>
+            <Text style={styles.restore}>Restore Subscription</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -293,120 +324,293 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
 }
 
 const C = {
-  bg: '#F8F6F2',
-  ink: '#161616',
-  body: '#6E6E73',
-  purple: '#6D5EF0',
-  purpleTint: '#EEEBFB',
-  border: '#E7E4DB',
-  green: '#2FA84F',
+  bg: '#FFFFFF',
+  ink: '#19181A',
+  body: '#8B8791',
+  purple: '#655D75',
+  purpleBright: '#6557F5',
+  purpleTint: '#F0EEFF',
+  border: '#202024',
+  muted: '#ECECEF',
+  teal: '#9BDCE7',
+  green: '#418B72',
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   safe: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
+  scrollContent: { paddingHorizontal: 10, paddingBottom: 28 },
 
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingHorizontal: 10,
   },
-  headerBack: { color: C.purple, fontSize: 16, fontWeight: '600' },
-
-  hero: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: 120, overflow: 'hidden' },
-  bottomBlock: { width: '100%', paddingHorizontal: 24, paddingBottom: 24, alignItems: 'center' },
-  mascotWrap: { width: 340, height: 340 * (499 / 800), alignItems: 'center', justifyContent: 'center' },
-  mascot: { width: '100%', height: '100%' },
-
-  title: { color: C.ink, fontSize: 26, fontWeight: '700', textAlign: 'center', marginTop: 6, marginBottom: 20 },
-
-  compareCard: { width: '100%', marginBottom: 24, position: 'relative', paddingBottom: 4 },
-  plusColumnBg: {
-    position: 'absolute', top: 18, bottom: 4, right: 0, width: 56,
-    backgroundColor: C.purpleTint, borderRadius: 16,
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 0,
+    backgroundColor: C.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  compareHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 12 },
-  compareTitle: { flex: 1, color: C.ink, fontSize: 16, fontWeight: '700' },
-  compareColLabelFree: { width: 56, textAlign: 'center', color: C.body, fontSize: 12, fontWeight: '600' },
-  plusColHeader: { width: 56, alignItems: 'center' },
-  plusPillBadge: { backgroundColor: C.purple, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
-  plusPillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  closeText: {
+    color: C.ink,
+    fontSize: 27,
+    lineHeight: 29,
+    fontWeight: '300',
+  },
+  hero: {
+    width: '100%',
+    height: 176,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -4,
+    marginBottom: 2,
+    overflow: 'hidden',
+  },
+  heroImage: { width: '100%', height: '100%' },
 
+  title: {
+    color: C.ink,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginTop: 6,
+  },
+  subtitle: {
+    color: C.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 3,
+    marginBottom: 16,
+  },
+  sectionLabel: {
+    color: '#9893A0',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+
+  cardShadow: {
+    width: '100%',
+    backgroundColor: C.purple,
+    borderRadius: 17,
+    paddingBottom: 4,
+    paddingRight: 3,
+  },
+  compareCard: {
+    width: '100%',
+    backgroundColor: C.bg,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  compareHeaderRow: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingRight: 8,
+  },
+  compareHeading: { flex: 1, paddingRight: 6 },
+  compareTitle: {
+    color: C.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  compareCaption: {
+    color: C.body,
+    fontSize: 10,
+    lineHeight: 13,
+    marginTop: 2,
+  },
+  compareColLabel: {
+    width: 48,
+    textAlign: 'center',
+    color: C.body,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  plusBadge: {
+    width: 48,
+    backgroundColor: C.purpleTint,
+    borderRadius: 12,
+    paddingVertical: 5,
+    alignItems: 'center',
+  },
+  plusBadgeText: {
+    color: C.purpleBright,
+    fontSize: 9,
+    fontWeight: '900',
+  },
   compareRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: C.border,
+    minHeight: 45,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E8E6EA',
   },
-  compareRowLast: {},
-  compareFeatureText: { flex: 1, color: C.ink, fontSize: 14, fontWeight: '500', paddingRight: 8 },
-  compareCellFree: { width: 56, alignItems: 'center' },
-  lockIcon: { fontSize: 14, opacity: 0.35 },
-  compareCellPlus: { width: 56, alignItems: 'center' },
-  checkCircle: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: C.purple,
-    alignItems: 'center', justifyContent: 'center',
+  compareRowLast: { borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
+  compareFeatureText: {
+    flex: 1,
+    color: C.ink,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    paddingRight: 6,
   },
-  checkCircleFree: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: C.purple,
-    alignItems: 'center', justifyContent: 'center',
+  compareCell: { width: 48, alignItems: 'center' },
+  check: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.teal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#6EAAB4',
   },
-  checkIcon: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  checkMuted: { backgroundColor: '#D9D8DD', borderColor: '#B5B2BA' },
+  checkText: { color: C.ink, fontSize: 10, fontWeight: '900' },
+  dash: { color: '#B9B6BD', fontSize: 15 },
 
-  pricingWrap: { width: '100%', position: 'relative' },
-  pricingCard: {
-    width: '100%', backgroundColor: '#fff', borderRadius: 24,
-    borderWidth: 1.5, borderColor: '#DCD6F7',
-    padding: 16, paddingTop: 22, marginBottom: 16,
+  plans: { width: '100%', flexDirection: 'row', gap: 10 },
+  planShadow: {
+    flex: 1,
+    borderRadius: 15,
+    paddingBottom: 3,
+    paddingRight: 2,
+    backgroundColor: '#D8D6DD',
   },
-  star: { position: 'absolute', fontSize: 20, color: C.purple, zIndex: 2 },
-  starTL: { top: -14, left: 24 },
-  starTR: { top: -18, right: 40, fontSize: 14 },
-  starR: { top: '35%', right: -14, fontSize: 16 },
-  starL: { top: '55%', left: -12, fontSize: 13 },
-  plans: { width: '100%', flexDirection: 'row', gap: 10, marginBottom: 14 },
+  planShadowSelected: { backgroundColor: C.purple },
   planCard: {
-    flex: 1, backgroundColor: '#fff', borderRadius: 16,
-    borderWidth: 1.5, borderColor: C.border,
-    padding: 14, position: 'relative',
+    minHeight: 115,
+    backgroundColor: C.bg,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
   },
-  planCardSelected: { borderColor: C.purple },
+  planCardSelected: { backgroundColor: '#FCFBFF' },
   saveBadge: {
-    position: 'absolute', top: -11, left: 12,
-    backgroundColor: C.purple, borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
+    position: 'absolute',
+    top: -10,
+    left: 10,
+    backgroundColor: C.purpleBright,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    zIndex: 2,
   },
-  saveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  planTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  planLabel: { color: C.ink, fontSize: 14, fontWeight: '600' },
+  saveBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900' },
+  planTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 9,
+  },
+  planLabel: { color: C.ink, fontSize: 13, fontWeight: '800' },
   radio: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 1.5, borderColor: C.border,
-    alignItems: 'center', justifyContent: 'center',
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#AAA7AF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  radioSelected: { borderColor: C.purple },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.purple },
-  planPrice: { color: C.ink, fontSize: 20, fontWeight: '700' },
-  planPeriod: { fontSize: 13, fontWeight: '500', color: C.body },
-  planSub: { color: C.body, fontSize: 12, marginTop: 2 },
+  radioSelected: { borderColor: C.ink },
+  radioDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.ink },
+  planPrice: { color: C.ink, fontSize: 18, fontWeight: '900' },
+  planPeriod: { color: C.body, fontSize: 10, fontWeight: '600' },
+  planSub: { color: C.body, fontSize: 10, lineHeight: 14, marginTop: 3 },
 
-  nothingDue: { color: C.green, fontSize: 13, fontWeight: '700', marginBottom: 14 },
+  dueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 13,
+  },
+  dueDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.green,
+    marginRight: 6,
+  },
+  nothingDue: { color: C.green, fontSize: 11, fontWeight: '800' },
 
-  cta: { width: '100%', backgroundColor: C.purple, borderRadius: 26, paddingVertical: 17, alignItems: 'center' },
-  ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  trialText: { color: C.body, fontSize: 12, textAlign: 'center', marginTop: 12 },
-  restore: { color: C.purple, fontSize: 13, fontWeight: '600', textAlign: 'center', paddingVertical: 8 },
+  ctaShadow: {
+    width: '100%',
+    backgroundColor: C.purple,
+    borderRadius: 24,
+    paddingBottom: 4,
+    paddingRight: 2,
+    marginTop: 13,
+  },
+  cta: {
+    width: '100%',
+    minHeight: 48,
+    backgroundColor: C.teal,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaText: { color: C.ink, fontSize: 14, fontWeight: '900' },
+  trialText: {
+    color: C.body,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  restore: {
+    color: C.ink,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    paddingVertical: 15,
+  },
 
   celebrateSafe: {
-    flex: 1, justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24,
+    flex: 1,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
   },
-  thanksBlock: { alignItems: 'center', gap: 12 },
+  thanksBlock: { alignItems: 'center' },
   thanksBadge: {
     backgroundColor: 'rgba(255,255,255,0.16)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
   },
-  thanksBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
+  thanksBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   celebrateCtaWrap: { width: '100%' },
+  celebrateButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 26,
+    backgroundColor: C.purpleBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  celebrateButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 });

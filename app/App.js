@@ -15,6 +15,7 @@ import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
 import OnboardingNotificationsScreen from './screens/OnboardingNotificationsScreen';
 import OnboardingProfileScreen from './screens/OnboardingProfileScreen';
+import OnboardingTrialScreen from './screens/OnboardingTrialScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
 import { createSetup, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
 import { initPurchases, hasProEntitlement } from './config/purchases';
@@ -53,8 +54,8 @@ const PRELOAD_ASSETS = [
   require('./assets/onboarding_1.mp4'),
   require('./assets/onboardingnew4.mp4'),
   require('./assets/peeking_bot.png'),
-  require('./assets/end_of_tutorial.gif'),
-  require('./assets/end_of_tutorail_loop.gif'),
+  require('./assets/onboarding_trial_hero.png'),
+  require('./assets/revamp_paywall_hero.png'),
   require('./assets/board.gif'),
   require('./assets/camera.gif'),
   require('./assets/airevamp.gif'),
@@ -108,17 +109,16 @@ export default function App() {
     if (ready && screen === 'home') initTutorial();
   }, [ready, screen]);
 
-  // Prompt for notifications right after the first-run tutorial. We watch the
-  // tutorial's active → done transition rather than hooking each exit, because
-  // the tour can be finished (the finale) OR skipped from any of its screens —
-  // this is the one place every path funnels through, so the opt-in shows
-  // either way. Returning users who already finished go idle → done (never
-  // 'active'), so this correctly doesn't fire for them.
+  // Show profile setup right after the first-run tutorial. Once the user
+  // finishes their username, profile picture, and banner setup, that screen
+  // advances to the trial offer.
+  // Returning users who already finished go idle → done (never 'active'), so
+  // they do not enter this first-run sequence again.
   const prevTutorialStatus = useRef(tutorial.status);
   useEffect(() => {
     const wasActive = prevTutorialStatus.current === 'active';
     prevTutorialStatus.current = tutorial.status;
-    if (wasActive && tutorial.status === 'done') setScreen('notifications-optin');
+    if (wasActive && tutorial.status === 'done') setScreen('onboarding-profile');
   }, [tutorial.status]);
 
   useEffect(() => {
@@ -433,9 +433,7 @@ export default function App() {
         />
       );
     }
-    // Notification opt-in runs AFTER the first-run tutorial (see the tutorial-end
-    // effect below), so it's shown whether the user finishes or skips the tour.
-    // No back button — the tutorial is over, this is a terminal step into the feed.
+    // Optional notification opt-in screen, retained for flows that request it.
     if (screen === 'notifications-optin') {
       return (
         <OnboardingNotificationsScreen
@@ -446,7 +444,15 @@ export default function App() {
     if (screen === 'onboarding-profile') {
       return (
         <OnboardingProfileScreen
-          onDone={() => setScreen('home')}
+          onDone={() => setScreen('onboarding-trial')}
+        />
+      );
+    }
+    if (screen === 'onboarding-trial') {
+      return (
+        <OnboardingTrialScreen
+          onUnlock={async () => { await unlockPremium(); setScreen('home'); }}
+          onClose={() => setScreen('home')}
         />
       );
     }
