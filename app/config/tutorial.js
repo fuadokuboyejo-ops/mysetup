@@ -211,6 +211,16 @@ export function jumpTutorial(id) {
   if (index > state.stepIndex) setState({ status: 'active', stepIndex: index });
 }
 
+// Rewind to a named step (used when back-navigation returns the user to an
+// earlier tutorial screen, e.g. camera/receipt → picker) — without this the
+// active step stays ahead of what's actually on screen, so the step's screen
+// never sees itself as active again and the tutorial silently stalls.
+export function rewindTutorial(id) {
+  if (state.status !== 'active') return;
+  const index = tutorialStepIndex(id);
+  if (index >= 0 && index < state.stepIndex) setState({ status: 'active', stepIndex: index });
+}
+
 function finish() {
   tutorialDone = true;
   doneFlagLoaded = true;

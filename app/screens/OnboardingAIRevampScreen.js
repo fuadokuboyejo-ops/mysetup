@@ -116,7 +116,7 @@ const C = {
   purple:    '#6D5EF0',
   purpleTint:'#EEEBFB',
   border:    '#E7E4DB',
-  dotOff:    '#D8D5CC',
+  dotOff:    '#B8B4AB',
   stepBg:    '#EDECEA',
 };
 

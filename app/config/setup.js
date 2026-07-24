@@ -44,7 +44,13 @@ async function signedUrl(bucket, path) {
   const { data, error } = await supabase.storage
     .from(bucket)
     .createSignedUrl(path, SIGNED_URL_SECONDS);
-  if (error) throw error;
+  if (error) {
+    // A missing/inaccessible object (StorageApiError: Object not found) must not
+    // crash the screen that's mapping this row — degrade to no image so the rest
+    // of the setup/item/profile still loads with a blank thumbnail.
+    console.warn('[storage] signed URL failed:', bucket, path, error.message);
+    return null;
+  }
   return data?.signedUrl || null;
 }
 

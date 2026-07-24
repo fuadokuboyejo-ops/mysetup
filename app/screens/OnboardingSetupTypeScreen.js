@@ -114,7 +114,7 @@ const C = {
   purpleTint:'#EEEBFB',
   border:   '#E7E4DB',
   card:     '#F6F6F6',
-  dotOff:   '#D8D5CC',
+  dotOff:   '#B8B4AB',
 };
 
 const styles = StyleSheet.create({

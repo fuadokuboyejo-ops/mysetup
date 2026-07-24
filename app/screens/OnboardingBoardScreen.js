@@ -118,7 +118,7 @@ const C = {
   purple:    '#6D5EF0',
   purpleTint:'#EEEBFB',
   border:    '#E7E4DB',
-  dotOff:    '#D8D5CC',
+  dotOff:    '#B8B4AB',
   stepBg:    '#F4F1EA',
 };
 
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.dotOff },
   dotActive: { width: 20, backgroundColor: C.ink },
 
-  hero: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', position: 'relative' },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', position: 'relative', overflow: 'hidden' },
   backBtn: {
     position: 'absolute', top: 8, left: 20, zIndex: 2,
     width: 44, height: 44, borderRadius: 22,

@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { setIsPremium } from '../config/setup';
+import { getProOfferings, purchasePackage, restorePurchases } from '../config/purchases';
 
 const MASCOT_INTRO = require('../assets/paywall.gif');
 const MASCOT_LOOP = require('../assets/paywall_loop.gif');
@@ -18,7 +18,6 @@ const THANKS_DELAY_MS = 400; // let the frozen frame land before the message + b
 const FEATURES = [
   { text: 'Save and share your favorite looks', free: true },
   { text: 'Photorealistic renders of your board' },
-  { text: 'Preview new gear on your setup instantly' },
   { text: 'Room for up to 100 items in your library' },
   { text: '100 AI generations a month' },
 ];
@@ -80,7 +79,30 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
   const [selected, setSelected] = useState('yearly');
   const [loading, setLoading] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
-  const plan = PLANS[selected];
+  // Live RevenueCat packages (annual/monthly) for the current offering. Null
+  // until loaded — the hardcoded PLANS copy stands in as the fallback.
+  const [packages, setPackages] = useState({ yearly: null, monthly: null });
+
+  useEffect(() => {
+    let active = true;
+    getProOfferings().then(offering => {
+      if (!active || !offering) return;
+      const byType = { yearly: null, monthly: null };
+      for (const pkg of offering.availablePackages || []) {
+        if (pkg.packageType === 'ANNUAL') byType.yearly = pkg;
+        else if (pkg.packageType === 'MONTHLY') byType.monthly = pkg;
+      }
+      setPackages(byType);
+    });
+    return () => { active = false; };
+  }, []);
+
+  // Merge live localized prices onto the design copy when RevenueCat has them.
+  const displayPlans = {
+    yearly: packages.yearly ? { ...PLANS.yearly, price: packages.yearly.product.priceString } : PLANS.yearly,
+    monthly: packages.monthly ? { ...PLANS.monthly, price: packages.monthly.product.priceString } : PLANS.monthly,
+  };
+  const plan = displayPlans[selected];
   const introOpacity = useRef(new Animated.Value(1)).current;
   const starPop = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
   const starTwinkle = useRef([0, 1, 2, 3].map(() => new Animated.Value(1))).current;
@@ -125,9 +147,20 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
   });
 
   const unlock = async () => {
+    const pkg = packages[selected];
+    if (!pkg) {
+      Alert.alert('Unavailable', 'Subscriptions aren’t available right now — please try again in a moment.');
+      return;
+    }
     setLoading(true);
-    await setIsPremium(true);
+    const { unlocked, cancelled, error } = await purchasePackage(pkg);
     setLoading(false);
+    if (cancelled) return;               // user backed out — no error to show
+    if (error) { Alert.alert('Purchase failed', error); return; }
+    if (!unlocked) {
+      Alert.alert('Almost there', 'Your purchase didn’t activate Pro. Try “Restore Subscription”.');
+      return;
+    }
     setCelebrating(true);
 
     // Let the gif play through once, then freeze it on its last frame for
@@ -151,8 +184,12 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
     }, SUBSCREEN_DURATION_MS);
   };
 
-  const restore = () => {
-    Alert.alert('Restore Subscription', 'No active subscription found for this account.');
+  const restore = async () => {
+    setLoading(true);
+    const { unlocked, error } = await restorePurchases();
+    setLoading(false);
+    if (unlocked) { onUnlock?.(); return; }
+    Alert.alert('Restore Subscription', error || 'No active subscription found for this account.');
   };
 
   if (celebrating) {
@@ -231,8 +268,8 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
 
             <View style={styles.pricingCard}>
               <View style={styles.plans}>
-                <PlanCard id="yearly" plan={PLANS.yearly} selected={selected === 'yearly'} onPress={() => setSelected('yearly')} />
-                <PlanCard id="monthly" plan={PLANS.monthly} selected={selected === 'monthly'} onPress={() => setSelected('monthly')} />
+                <PlanCard id="yearly" plan={displayPlans.yearly} selected={selected === 'yearly'} onPress={() => setSelected('yearly')} />
+                <PlanCard id="monthly" plan={displayPlans.monthly} selected={selected === 'monthly'} onPress={() => setSelected('monthly')} />
               </View>
 
               {selected === 'yearly' && <Text style={styles.nothingDue}>Nothing due today</Text>}

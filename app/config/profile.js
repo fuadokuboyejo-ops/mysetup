@@ -31,6 +31,26 @@ export async function getProfileMedia(user) {
   };
 }
 
+// Save the chosen username (and mirror it to display_name). The profiles table
+// has a case-insensitive unique index on username, so a clash comes back as
+// Postgres 23505 — translate that into a friendly, actionable message.
+export async function saveProfileUsername(user, username) {
+  const userId = user?.id;
+  if (!userId) throw new Error('Sign in to update your profile.');
+  const clean = String(username || '').trim();
+  if (!clean) throw new Error('Please choose a username.');
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ username: clean, display_name: clean, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) {
+    if (error.code === '23505') throw new Error('That username is already taken — try another.');
+    throw error;
+  }
+  return clean;
+}
+
 export async function saveProfileImage(user, kind, base64) {
   if (!['avatar', 'banner'].includes(kind)) throw new Error('Unsupported profile image type.');
   if (!base64) throw new Error('The selected image could not be read.');

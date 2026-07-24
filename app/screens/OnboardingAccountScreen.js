@@ -110,7 +110,10 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
         </View>
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          // iOS: let the ScrollView manage keyboard insets (automaticallyAdjustKeyboardInsets)
+          // instead of padding — the padding behavior added keyboard-height whitespace
+          // you could scroll into and shoved the footer up over the inputs.
+          behavior={Platform.OS === 'android' ? 'height' : undefined}
           style={styles.kav}
         >
           <ScrollView
@@ -118,6 +121,7 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           >
             <View style={styles.mascotArea}>
               <Image
@@ -226,25 +230,29 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
               <GoogleLogo size={18} />
               <Text style={styles.googleText}>Continue with Google</Text>
             </TouchableOpacity>
+
+            {/* Footer lives inside the ScrollView so it scrolls with the form.
+                As direct KeyboardAvoidingView children (below the flex:1 ScrollView)
+                the padding behavior shoved them up over the inputs when the
+                keyboard opened, reading as a white block covering the password. */}
+            <View style={styles.signinRow}>
+              <Text style={styles.signinText}>
+                {isSignIn ? "don't have an account? " : 'already have an account? '}
+              </Text>
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => { setMode(isSignIn ? 'signup' : 'signin'); setError(null); }}
+              >
+                <Text style={styles.signinLink}>{isSignIn ? 'create one' : 'sign in'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {onSkip && (
+              <TouchableOpacity style={styles.skipBtn} onPress={onSkip} activeOpacity={0.7}>
+                <Text style={styles.skipText}>skip for now</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
-
-          <View style={styles.signinRow}>
-            <Text style={styles.signinText}>
-              {isSignIn ? "don't have an account? " : 'already have an account? '}
-            </Text>
-            <TouchableOpacity
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={() => { setMode(isSignIn ? 'signup' : 'signin'); setError(null); }}
-            >
-              <Text style={styles.signinLink}>{isSignIn ? 'create one' : 'sign in'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {onSkip && (
-            <TouchableOpacity style={styles.skipBtn} onPress={onSkip} activeOpacity={0.7}>
-              <Text style={styles.skipText}>skip for now</Text>
-            </TouchableOpacity>
-          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -258,7 +266,7 @@ const C = {
   purple:      '#6D5EF0',
   placeholder: '#ADADAD',
   inputBg:     '#F2F2F2',
-  dotOff:      '#D8D5CC',
+  dotOff:      '#B8B4AB',
 };
 
 const styles = StyleSheet.create({

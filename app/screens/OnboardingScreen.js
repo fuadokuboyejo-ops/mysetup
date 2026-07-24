@@ -127,7 +127,7 @@ const C = {
   purpleTint:'#EEEBFB',
   scattered: '#ECEAE3',
   border:    '#E7E4DB',
-  dotOff:    '#D8D5CC',
+  dotOff:    '#B8B4AB',
 };
 
 const styles = StyleSheet.create({

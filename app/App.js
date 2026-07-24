@@ -14,14 +14,15 @@ import OnboardingStyleScreen from './screens/OnboardingStyleScreen';
 import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
 import OnboardingNotificationsScreen from './screens/OnboardingNotificationsScreen';
+import OnboardingProfileScreen from './screens/OnboardingProfileScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
-import { createSetup, getIsPremium, addSetupItem } from './config/setup';
-import { initPurchases } from './config/purchases';
+import { createSetup, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
+import { initPurchases, hasProEntitlement } from './config/purchases';
 import { supabase } from './config/supabase';
 import { handleAuthRedirect } from './config/auth';
 import { imageUri } from './config/media';
 import {
-  TUTORIAL_STEPS, initTutorial, preloadTutorial, advanceTutorial, jumpTutorial, completeTutorial,
+  TUTORIAL_STEPS, initTutorial, preloadTutorial, advanceTutorial, jumpTutorial, rewindTutorial, completeTutorial,
   skipTutorial, isTutorialActive, useTutorialState,
 } from './config/tutorial';
 import TutorialCelebration from './components/TutorialCelebration';
@@ -141,7 +142,11 @@ export default function App() {
       const session = sessionResult.data?.session || null;
       if (session) {
         try {
-          setIsPremiumState(await getIsPremium());
+          // Premium is unlocked if EITHER the local flag or the RevenueCat
+          // entitlement says so — the entitlement is the real source of truth
+          // for anyone who actually purchased through the paywall.
+          const [localPremium, pro] = await Promise.all([getIsPremium(), hasProEntitlement()]);
+          setIsPremiumState(localPremium || pro);
         } catch (error) {
           console.warn('[app] premium status load failed:', error.message);
         }
@@ -190,6 +195,13 @@ export default function App() {
       subscription.remove();
     };
   }, []);
+
+  // Mark the account pro locally + persist it. RevenueCat's entitlement is the
+  // real source of truth (re-synced on launch), this just reflects it in-app now.
+  const unlockPremium = async () => {
+    setIsPremiumState(true);
+    try { await setIsPremium(true); } catch (e) { console.warn('[app] persist premium failed:', e?.message || e); }
+  };
 
   const openRevamp = () => setScreen(isPremium ? 'revamp-menu' : 'revamp-paywall');
 
@@ -427,7 +439,14 @@ export default function App() {
     if (screen === 'notifications-optin') {
       return (
         <OnboardingNotificationsScreen
-          onContinue={(prefs) => setScreen('home')}
+          onContinue={(prefs) => setScreen('onboarding-profile')}
+        />
+      );
+    }
+    if (screen === 'onboarding-profile') {
+      return (
+        <OnboardingProfileScreen
+          onDone={() => setScreen('home')}
         />
       );
     }
@@ -468,7 +487,7 @@ export default function App() {
             setPhotoBase64(base64);
             setScreen('preview');
           }}
-          onBack={() => setScreen('picker')}
+          onBack={() => { rewindTutorial('pick-category'); setScreen('picker'); }}
           productType={productType}
           productGuide={productGuide}
         />
@@ -510,7 +529,7 @@ export default function App() {
           photoBase64={photoBase64}
           productType={productType}
           onResults={(product, uri) => { setPhotoUri(uri); addScannedItem(product); }}
-          onBack={() => setScreen('picker')}
+          onBack={() => { rewindTutorial('pick-category'); setScreen('picker'); }}
         />
       );
     }
@@ -582,7 +601,7 @@ export default function App() {
     if (screen === 'revamp-paywall') {
       return (
         <RevampPaywallScreen
-          onUnlock={() => { setIsPremiumState(true); setScreen('revamp-menu'); }}
+          onUnlock={async () => { await unlockPremium(); setScreen('revamp-menu'); }}
           onBack={() => setScreen('home')}
         />
       );

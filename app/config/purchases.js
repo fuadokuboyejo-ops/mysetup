@@ -45,3 +45,40 @@ export async function hasProEntitlement() {
     return false;
   }
 }
+
+// The current offering (the one marked "Current" in the RevenueCat dashboard),
+// or null if RevenueCat isn't reachable / nothing is configured. A custom
+// paywall reads its packages + live localized prices from here.
+export async function getProOfferings() {
+  if (!NativeModules.RNPurchases) return null;
+  try {
+    const offerings = await Purchases.getOfferings();
+    return offerings?.current ?? null;
+  } catch (e) {
+    console.warn('[purchases] getOfferings failed:', e?.message || e);
+    return null;
+  }
+}
+
+// Buy a package. Resolves { unlocked, cancelled, error } — cancelled is the
+// user backing out (not an error to surface), unlocked means the pro
+// entitlement is now active.
+export async function purchasePackage(pkg) {
+  try {
+    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    return { unlocked: !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID] };
+  } catch (e) {
+    if (e?.userCancelled) return { cancelled: true };
+    return { error: e?.message || 'Purchase failed' };
+  }
+}
+
+// Restore prior purchases; resolves whether the pro entitlement is now active.
+export async function restorePurchases() {
+  try {
+    const customerInfo = await Purchases.restorePurchases();
+    return { unlocked: !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID] };
+  } catch (e) {
+    return { unlocked: false, error: e?.message || 'Restore failed' };
+  }
+}
