@@ -96,6 +96,17 @@ export async function signOut() {
   return { error: error?.message ?? null };
 }
 
+// Permanently delete the signed-in account via the delete-account Edge Function
+// (holds the service-role key server-side). On success the local session is
+// cleared too, so the app falls back to onboarding.
+export async function deleteAccount() {
+  const { data, error } = await supabase.functions.invoke('delete-account');
+  const message = error?.message || data?.error;
+  if (message) return { error: message };
+  await supabase.auth.signOut().catch(() => {});
+  return { error: null };
+}
+
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
   return data?.session ?? null;

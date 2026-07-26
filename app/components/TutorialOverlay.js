@@ -672,6 +672,9 @@ export default function TutorialOverlay({
   const tailLeft = clamp(holeCX - bubbleLeft - 9, 14, bubbleW - 32);
 
   const pose = step.pose || 'peek';
+  // A step may override the dim colour so a mascot art asset with a baked-in
+  // background blends into the scrim instead of showing as a box.
+  const scrimColor = step.scrim || SCRIM;
   const emoW = 96;
   const emoH = 96;
   const emoLeft = clamp(holeCX - emoW / 2, 12, W - 12 - emoW);
@@ -679,6 +682,11 @@ export default function TutorialOverlay({
   const headerTop = insets.top + offsetY + 12;
   const cheer = steps[stepIndex - 1]?.cheer;
   const showingIntro = !!(step.introAsset || step.introVideo);
+  // Keep the cheer toast off the spotlight: when the highlighted element is up
+  // top (bubble sits below it), drop the cheer to mid-screen so it doesn't cover
+  // the target. Steps with a bottom mascot keep the cheer up top to avoid it.
+  const cheerLow = !placeAbove && !step.mascotBottom;
+  const cheerTop = cheerLow ? Math.round(H * 0.5) : headerTop + 44;
 
   const content = (
     <View style={styles.root} pointerEvents="box-none">
@@ -690,7 +698,7 @@ export default function TutorialOverlay({
             <Rect x={0} y={0} width={W} height={H} fill="#fff" />
             <Rect x={hx} y={hy} width={hw} height={hh} rx={radius} ry={radius} fill="#000" />
           </Mask>
-          <Rect x={0} y={0} width={W} height={H} fill={SCRIM} mask="url(#tutorial-spotlight)" />
+          <Rect x={0} y={0} width={W} height={H} fill={scrimColor} mask="url(#tutorial-spotlight)" />
         </Svg>
       )}
 
@@ -722,7 +730,7 @@ export default function TutorialOverlay({
       {!showingIntro && (
         <TutorialHeader steps={steps} stepIndex={stepIndex} onSkip={onSkip} top={headerTop} />
       )}
-      {!showingIntro && <CheerToast text={cheer} top={headerTop + 44} />}
+      {!showingIntro && <CheerToast text={cheer} top={cheerTop} />}
 
       {/* Steps without text run spotlight-only — no bubble, no mascot.
           `mascot: false` on a step keeps the bubble but drops the sprite. */}
@@ -741,6 +749,16 @@ export default function TutorialOverlay({
             )}
           </View>
         ))}
+
+      {/* Optional: Emo anchored at the bottom of the screen, gazing up at the
+          spotlight (e.g. looking up at the "+ Add photo" button). Static (no
+          float) and drawn on the matching scrim colour so its baked-in
+          background blends seamlessly. */}
+      {!showingIntro && step.mascotBottom && (
+        <View style={[styles.bottomMascot, { bottom: 0 }]} pointerEvents="none">
+          <Image source={EMO_POSES[pose]} style={styles.bottomMascotImg} contentFit="contain" />
+        </View>
+      )}
 
       {showingIntro && (
         <TutorialMascotIntro
@@ -920,6 +938,8 @@ const styles = StyleSheet.create({
   cheerText: { color: '#0E0E10', fontSize: 14, fontWeight: '800', textAlign: 'center' },
 
   stack: { position: 'absolute', left: 0, right: 0 },
+  bottomMascot: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  bottomMascotImg: { width: 380, height: 238 },
 
   bubble: {
     backgroundColor: '#FFFFFF', borderRadius: 16,

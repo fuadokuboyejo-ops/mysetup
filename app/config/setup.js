@@ -303,7 +303,20 @@ export async function syncPublicItemsFromPosts() {
     .filter(setup => publishedIds.has(setup.id))
     .flatMap(setup => Object.values(setup.slots || {}))
     .filter(Boolean))];
+
+  // Two-way sync: an item is public iff it sits on a posted setup. Publish the
+  // ones that are, and pull the rest back to private (e.g. after a post is deleted).
   await makeItemsPublic(publicItemIds);
+  const revoke = supabase
+    .from('items')
+    .update({ is_public: false })
+    .eq('user_id', user.id)
+    .eq('is_public', true);
+  const { error: revokeError } = await (publicItemIds.length
+    ? revoke.not('id', 'in', `(${publicItemIds.join(',')})`)
+    : revoke);
+  throwIfError(revokeError);
+
   return getAllItems();
 }
 

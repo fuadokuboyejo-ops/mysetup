@@ -60,6 +60,27 @@ export async function getProOfferings() {
   }
 }
 
+// Describe a package's introductory offer (the free trial / intro price you set
+// up on the store product), or null if it has none. The trial itself is granted
+// by the store when configured in App Store Connect / Google Play Console — this
+// only reads what RevenueCat reports so the paywall never claims a trial that
+// isn't actually there.
+//   → { isFree, periodText: "3-day", label: "3-day free trial" }
+export function introOffer(pkg) {
+  const intro = pkg?.product?.introPrice;
+  const units = intro?.periodNumberOfUnits;
+  const unit = String(intro?.periodUnit || '').toLowerCase(); // day | week | month | year
+  if (!intro || !units || !unit) return null;
+
+  const isFree = (intro.price ?? 0) === 0;
+  const periodText = `${units}-${unit}`; // RevenueCat already gives singular units
+  return {
+    isFree,
+    periodText,
+    label: isFree ? `${periodText} free trial` : `${periodText} intro offer`,
+  };
+}
+
 // Buy a package. Resolves { unlocked, cancelled, error } — cancelled is the
 // user backing out (not an error to surface), unlocked means the pro
 // entitlement is now active.

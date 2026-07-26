@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Platform, TextInput,
-  KeyboardAvoidingView, ScrollView, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView, ActivityIndicator, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -41,6 +41,32 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
   const isSignIn = mode === 'signin';
   const canSubmit = email.length > 0 && password.length >= 8 && !loading;
 
+  // Waiting on email confirmation: once the address is confirmed, log the user
+  // straight in with the credentials they just entered — no trip to the sign-in
+  // form. We retry when they return to the app (after tapping the email link)
+  // and on a gentle poll (for the case they confirm on another device while the
+  // app stays open here). Sign-in stays failing until the email is confirmed.
+  useEffect(() => {
+    if (!pendingEmail) return undefined;
+    let cancelled = false;
+
+    const tryAutoLogin = async () => {
+      if (cancelled) return;
+      const { user, session } = await signIn(pendingEmail, password);
+      if (!cancelled && session) {
+        onContinue({ email: pendingEmail, user, isNewAccount: true });
+      }
+    };
+
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') tryAutoLogin();
+    });
+    const interval = setInterval(tryAutoLogin, 5000);
+    tryAutoLogin();
+
+    return () => { cancelled = true; sub.remove(); clearInterval(interval); };
+  }, [pendingEmail, password, onContinue]);
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setLoading(true);
@@ -60,7 +86,7 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
       setError(null);
       return;
     }
-    onContinue({ email, user });
+    onContinue({ email, user, isNewAccount: !isSignIn });
   };
 
   const handleResend = async () => {

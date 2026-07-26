@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { getProOfferings, purchasePackage, restorePurchases } from '../config/purchases';
+import { getProOfferings, purchasePackage, restorePurchases, introOffer } from '../config/purchases';
 
 const SUBSCREEN_GIF = require('../assets/subscreen.gif');
 const HERO_IMAGE = require('../assets/revamp_paywall_hero.png');
@@ -31,18 +31,37 @@ const PLANS = {
     label: 'Yearly',
     price: '$39.99',
     period: '/year',
+    periodWord: 'year',
     sub: '$3.33/mo',
     save: 'Save 33%',
-    trial: '3-day free trial, then $39.99/year',
   },
   monthly: {
     label: 'Monthly',
     price: '$4.99',
     period: '/mo',
-    sub: '3 days free',
-    trial: '3-day free trial, then $4.99/month',
+    periodWord: 'month',
+    sub: 'Billed monthly',
   },
 };
+
+// Every plan ships with a free trial. We use the store's real intro period when
+// RevenueCat reports one, and fall back to this until the products (and the real
+// SDK key) are live so the paywall still advertises the trial in dev/test.
+const DEFAULT_TRIAL_PERIOD = '3-day';
+
+// Build the per-plan display, folding in the store's real intro offer (trial).
+function planView(base, pkg) {
+  const price = pkg?.product?.priceString || base.price;
+  const intro = pkg ? introOffer(pkg) : null;
+  const trialPeriod = intro?.isFree ? intro.periodText : DEFAULT_TRIAL_PERIOD;
+  return {
+    ...base,
+    price,
+    trialPeriod,
+    sub: `${trialPeriod} free trial`,
+    trial: `${trialPeriod} free trial, then ${price}/${base.periodWord}`,
+  };
+}
 
 function Check({ muted = false }) {
   return (
@@ -124,20 +143,8 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
   }, []);
 
   const displayPlans = {
-    yearly: packages.yearly
-      ? {
-          ...PLANS.yearly,
-          price: packages.yearly.product.priceString,
-          trial: `3-day free trial, then ${packages.yearly.product.priceString}/year`,
-        }
-      : PLANS.yearly,
-    monthly: packages.monthly
-      ? {
-          ...PLANS.monthly,
-          price: packages.monthly.product.priceString,
-          trial: `3-day free trial, then ${packages.monthly.product.priceString}/month`,
-        }
-      : PLANS.monthly,
+    yearly: planView(PLANS.yearly, packages.yearly),
+    monthly: planView(PLANS.monthly, packages.monthly),
   };
   const plan = displayPlans[selected];
 
@@ -255,6 +262,10 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
           <Text style={styles.title}>Access all of AI Revamp</Text>
           <Text style={styles.subtitle}>Build more ideas and see your dream setup come to life.</Text>
 
+          <View style={styles.trialBanner}>
+            <Text style={styles.trialBannerText}>✦  Start with a {plan.trialPeriod} free trial</Text>
+          </View>
+
           <Text style={styles.sectionLabel}>WHAT YOU GET</Text>
           <View style={styles.cardShadow}>
             <View style={styles.compareCard}>
@@ -296,7 +307,7 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
 
           <View style={styles.dueRow}>
             <View style={styles.dueDot} />
-            <Text style={styles.nothingDue}>Nothing due today</Text>
+            <Text style={styles.nothingDue}>{plan.trialPeriod} free trial · nothing due today</Text>
           </View>
 
           <View style={styles.ctaShadow}>
@@ -308,7 +319,7 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
             >
               {loading
                 ? <ActivityIndicator color={C.ink} />
-                : <Text style={styles.ctaText}>Start free trial</Text>}
+                : <Text style={styles.ctaText}>Start {plan.trialPeriod} free trial</Text>}
             </TouchableOpacity>
           </View>
 
@@ -387,6 +398,20 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 3,
     marginBottom: 16,
+  },
+  trialBanner: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.purpleTint,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 4,
+  },
+  trialBannerText: {
+    color: C.purpleBright,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   sectionLabel: {
     color: '#9893A0',

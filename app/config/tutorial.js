@@ -7,6 +7,7 @@ export const EMO_POSES = {
   head: require('../assets/mascot_head.png'),
   peek: require('../assets/peeking_bot.png'),
   dance: require('../assets/mascot.gif'),
+  lookup: require('../assets/mascot_lookingup.png'),
 };
 
 // ─── Step config ─────────────────────────────────────────────────────────────
@@ -104,6 +105,47 @@ export const TUTORIAL_STEPS = [
     id: 'drag-item',
     kind: 'banner',
     text: 'drag your new item onto the board',
+    cheer: 'looking good. 👌',
+  },
+  {
+    id: 'photo-tab',
+    kind: 'spotlight',
+    mascot: false,
+    shape: 'rect',
+    radius: 14,
+    padding: 4,
+    text: 'now tap ‘Photo’ to see your setup.',
+    cheer: 'nice.',
+  },
+  {
+    id: 'add-photo',
+    kind: 'spotlight',
+    mascot: false,        // no inline sprite next to the bubble…
+    mascotBottom: true,   // …Emo sits at the bottom, looking up at the button
+    pose: 'lookup',
+    // Match the mascot art's baked-in charcoal background so it blends into the
+    // scrim instead of showing as a box.
+    scrim: '#383838',
+    shape: 'rect',
+    radius: 16,
+    padding: 8,
+    text: 'add a photo of your whole setup so people can see the real thing.',
+    cheer: 'looks great. 📸',
+  },
+  {
+    id: 'edit-tags',
+    kind: 'spotlight',
+    mascot: false,
+    shape: 'rect',
+    radius: 20,
+    padding: 8,
+    text: 'now tap ‘Edit tags’ to label the gear in your photo.',
+  },
+  {
+    id: 'place-tag',
+    kind: 'banner',
+    text: 'drag an item onto the photo to tag it',
+    cheer: 'tagged it! 🏷️',
   },
   {
     id: 'all-set',
@@ -161,11 +203,49 @@ const DEV_REPLAY_TUTORIAL = false;
 let doneFlagLoaded = false;
 let tutorialDone = false;
 
+// The completion flag is scoped per ACCOUNT (keyed by user id) so a brand-new
+// account still gets the tour on a device where a different account already
+// finished it. Falls back to the bare key when no user is known yet.
+let currentUserId = null;
+const tutorialKey = () => (currentUserId ? `${TUTORIAL_KEY}:${currentUserId}` : TUTORIAL_KEY);
+
+// Point the tutorial at the signed-in account. When the account changes we
+// forget the cached flag and reset to idle so initTutorial re-decides for the
+// new user (otherwise a previous user's 'done' state would suppress the tour).
+export function setTutorialUser(userId) {
+  const next = userId ?? null;
+  if (next === currentUserId) return;
+  currentUserId = next;
+  doneFlagLoaded = false;
+  tutorialDone = false;
+  setState({ status: 'idle', stepIndex: 0 });
+}
+
+// Drop the current account's completion flag — called when deleting the account
+// so that a user id recycled for the same email starts the tour fresh, on any
+// sign-up path (including email-confirmation, which has no session at sign-up).
+export async function clearTutorialFlag() {
+  try { await AsyncStorage.removeItem(tutorialKey()); } catch { /* ignore */ }
+}
+
+// A brand-new account must always see the tour — even if Supabase recycled the
+// user id from a just-deleted account with the same email (whose completion flag
+// would otherwise still be on this device). Clear that flag and arm the tour so
+// it shows the next time Home mounts. Call this on SIGN-UP only, never sign-in.
+export async function resetTutorialForNewAccount(userId) {
+  if (userId) currentUserId = userId;
+  tutorialDone = false;
+  doneFlagLoaded = true; // we know it's not done for a fresh account
+  try { await AsyncStorage.removeItem(tutorialKey()); } catch { /* ignore */ }
+  setState({ status: 'idle', stepIndex: 0 });
+}
+
 // Load the completion flag during the launch loading screen so initTutorial can
-// decide without awaiting. Safe to call more than once.
-export async function preloadTutorial() {
+// decide without awaiting. Pass the signed-in user id to scope it per account.
+export async function preloadTutorial(userId) {
+  if (userId !== undefined) currentUserId = userId ?? null;
   try {
-    tutorialDone = (await AsyncStorage.getItem(TUTORIAL_KEY)) === '1';
+    tutorialDone = (await AsyncStorage.getItem(tutorialKey())) === '1';
   } catch {
     tutorialDone = false;
   }
@@ -188,8 +268,8 @@ export function initTutorial() {
     activate(tutorialDone);
     return;
   }
-  // Not preloaded yet (shouldn't normally happen) — fall back to the async read.
-  AsyncStorage.getItem(TUTORIAL_KEY)
+  // Not preloaded yet — fall back to the async read (per-account key).
+  AsyncStorage.getItem(tutorialKey())
     .then(value => {
       if (state.status !== 'idle') return;
       activate(value === '1');
@@ -228,11 +308,18 @@ export function rewindTutorial(id) {
   if (index >= 0 && index < state.stepIndex) setState({ status: 'active', stepIndex: index });
 }
 
+// Dev-only: force the tour to a specific step (used by the DevScreen jump list).
+export function startTutorialAtStep(id) {
+  const index = tutorialStepIndex(id);
+  if (index < 0) return;
+  setState({ status: 'active', stepIndex: index });
+}
+
 function finish() {
   tutorialDone = true;
   doneFlagLoaded = true;
   setState({ status: 'done', stepIndex: TUTORIAL_STEPS.length });
-  AsyncStorage.setItem(TUTORIAL_KEY, '1').catch(() => {});
+  AsyncStorage.setItem(tutorialKey(), '1').catch(() => {});
 }
 
 export function completeTutorial() {

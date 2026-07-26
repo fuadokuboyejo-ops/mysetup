@@ -11,11 +11,14 @@ import { getProfileMedia } from '../config/profile';
 const ICON = '#222222';
 const STROKE = 1.7;
 
-function PersonIcon() {
+function FeedbackIcon() {
   return (
     <Svg width={24} height={24} viewBox="0 0 24 24">
-      <Circle cx={12} cy={8} r={3.6} stroke={ICON} strokeWidth={STROKE} fill="none" />
-      <Path d="M5 19.5a7 7 0 0 1 14 0" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinecap="round" />
+      <Path
+        d="M4 5.5h16A1.5 1.5 0 0 1 21.5 7v8a1.5 1.5 0 0 1-1.5 1.5H9.5L5 20v-3.5H4A1.5 1.5 0 0 1 2.5 15V7A1.5 1.5 0 0 1 4 5.5z"
+        stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinejoin="round"
+      />
+      <Path d="M7 9.5h10M7 12.5h6" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -34,28 +37,21 @@ function StarIcon() {
     </Svg>
   );
 }
-function ShieldIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24">
-      <Path d="M12 3.2l7 2.8v5c0 4.4-3 7.8-7 9.6-4-1.8-7-5.2-7-9.6V6z" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-function HelpIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={8.6} stroke={ICON} strokeWidth={STROKE} fill="none" />
-      <Path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.8.4-1 .9-1 1.7" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinecap="round" />
-      <Circle cx={12} cy={16.4} r={0.9} fill={ICON} />
-    </Svg>
-  );
-}
 function LogoutIcon({ color = ICON }) {
   return (
     <Svg width={24} height={24} viewBox="0 0 24 24">
       <Path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8" stroke={color} strokeWidth={STROKE} fill="none" strokeLinecap="round" strokeLinejoin="round" />
       <Path d="M17.5 8.5L21 12l-3.5 3.5" stroke={color} strokeWidth={STROKE} fill="none" strokeLinecap="round" strokeLinejoin="round" />
       <Line x1={10} y1={12} x2={21} y2={12} stroke={color} strokeWidth={STROKE} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function TrashIcon({ color = '#D1453B' }) {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24">
+      <Path d="M4 7h16" stroke={color} strokeWidth={STROKE} fill="none" strokeLinecap="round" />
+      <Path d="M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7" stroke={color} strokeWidth={STROKE} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M6.5 7l.9 12.2a1.8 1.8 0 0 0 1.8 1.7h5.6a1.8 1.8 0 0 0 1.8-1.7L17.5 7" stroke={color} strokeWidth={STROKE} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -78,7 +74,7 @@ function Row({ icon, label, onPress, danger }) {
   );
 }
 
-export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onManagePlan, isPremium }) {
+export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onManagePlan, onDeleteAccount, onCommunityFeedback, isPremium }) {
   const [profile, setProfile] = useState({ name: 'You', avatarUrl: null });
 
   useEffect(() => {
@@ -105,6 +101,17 @@ export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onMana
       { text: 'Cancel', style: 'cancel' },
       { text: 'Log out', style: 'destructive', onPress: () => onLogout?.() },
     ]);
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete account',
+      'This permanently deletes your account, setups, and gear. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDeleteAccount?.() },
+      ],
+    );
   };
 
   return (
@@ -150,19 +157,18 @@ export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onMana
 
           {/* Settings section */}
           <Text style={S.section}>Settings</Text>
-          <Row icon={<PersonIcon />} label="Personal information" onPress={onOpenProfile} />
+          <Row icon={<FeedbackIcon />} label="Community feedback" onPress={onCommunityFeedback} />
           <Row icon={<BellIcon />} label="Notifications" onPress={() => comingSoon('Notifications')} />
           <Row
             icon={<StarIcon />}
             label={isPremium ? 'Subscription · Pro' : 'Subscription'}
             onPress={onManagePlan}
           />
-          <Row icon={<ShieldIcon />} label="Login & security" onPress={() => comingSoon('Login & security')} />
-          <Row icon={<HelpIcon />} label="Help & support" onPress={() => comingSoon('Help & support')} />
 
           {/* Account section */}
           <Text style={S.section}>Account</Text>
           <Row icon={<LogoutIcon color="#D1453B" />} label="Log out" onPress={confirmLogout} danger />
+          <Row icon={<TrashIcon />} label="Delete account" onPress={confirmDelete} danger />
 
         </ScrollView>
       </SafeAreaView>

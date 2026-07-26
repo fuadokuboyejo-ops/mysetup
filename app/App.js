@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Alert, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import * as Linking from 'expo-linking';
@@ -13,17 +13,17 @@ import OnboardingSetupTypeScreen from './screens/OnboardingSetupTypeScreen';
 import OnboardingStyleScreen from './screens/OnboardingStyleScreen';
 import OnboardingAccountScreen from './screens/OnboardingAccountScreen';
 import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
-import OnboardingNotificationsScreen from './screens/OnboardingNotificationsScreen';
 import OnboardingProfileScreen from './screens/OnboardingProfileScreen';
 import OnboardingTrialScreen from './screens/OnboardingTrialScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
-import { createSetup, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
+import { createSetup, getSetups, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
 import { initPurchases, hasProEntitlement } from './config/purchases';
 import { supabase } from './config/supabase';
-import { handleAuthRedirect, signOut } from './config/auth';
+import { handleAuthRedirect, signOut, deleteAccount } from './config/auth';
 import { imageUri } from './config/media';
 import {
-  TUTORIAL_STEPS, initTutorial, preloadTutorial, advanceTutorial, jumpTutorial, rewindTutorial, completeTutorial,
+  TUTORIAL_STEPS, initTutorial, preloadTutorial, setTutorialUser, resetTutorialForNewAccount, clearTutorialFlag,
+  advanceTutorial, jumpTutorial, rewindTutorial, completeTutorial, startTutorialAtStep,
   skipTutorial, isTutorialActive, useTutorialState,
 } from './config/tutorial';
 import TutorialCelebration from './components/TutorialCelebration';
@@ -42,6 +42,8 @@ import RevampSetupPickerScreen from './screens/RevampSetupPickerScreen';
 import RevampCameraRollScreen from './screens/RevampCameraRollScreen';
 import RevampScreen from './screens/RevampScreen';
 import RevampPaywallScreen from './screens/RevampPaywallScreen';
+import DevScreen from './screens/DevScreen';
+import CommunityFeedbackScreen from './screens/CommunityFeedbackScreen';
 
 const LOADING_SCREEN = require('./assets/loadingscreen.mp4');
 
@@ -104,6 +106,16 @@ export default function App() {
   // Configure RevenueCat once on launch (logs whether it connected).
   useEffect(() => { initPurchases(); }, []);
 
+  // Keep the tutorial scoped to whoever is signed in. Fires on login, signup,
+  // and logout — so a new account gets its own first-run tour even on a device
+  // where another account already finished it.
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setTutorialUser(session?.user?.id ?? null);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
   // The tutorial starts the first time the user lands on the feed — after
   // onboarding or straight away for returning-but-untutored accounts.
   useEffect(() => {
@@ -133,14 +145,11 @@ export default function App() {
       const [assetResults, sessionResult] = await Promise.all([
         Promise.allSettled(assetTasks),
         supabase.auth.getSession(),
-        // Read the tutorial-completed flag now, while the loading screen is up,
-        // so initTutorial can flip the tour on synchronously later — no flash of
-        // the bare feed on the onboarding → tutorial handoff.
-        preloadTutorial(),
       ]);
       if (!active) return;
 
       let session = sessionResult.data?.session || null;
+      let sessionUser = null;
 
       // getSession() only reads the cached token — it can't tell that the
       // account was deleted or the token revoked. Confirm the user still exists
@@ -157,6 +166,8 @@ export default function App() {
         if (authInvalid) {
           await supabase.auth.signOut().catch(() => {});
           session = null; // fall through to the default 'onboarding' screen
+        } else {
+          sessionUser = userData.user;
         }
       }
 
@@ -170,6 +181,11 @@ export default function App() {
         } catch (error) {
           console.warn('[app] premium status load failed:', error.message);
         }
+        // Read this account's tutorial-completed flag now, while the loading
+        // screen is up, so initTutorial can decide synchronously — no flash of
+        // the bare feed on the handoff, and scoped per account.
+        await preloadTutorial(sessionUser?.id);
+        if (!active) return;
         // Dev flag keeps you on the onboarding flow to test the full first-run.
         if (!(__DEV__ && DEV_FORCE_ONBOARDING)) {
           initTutorial(); // decide the tour before Home first paints
@@ -325,6 +341,55 @@ export default function App() {
     setScreen('onboarding');
   };
 
+  // Settings → "Delete account": permanently removes the account + data, then
+  // returns to onboarding. The confirm lives in the Settings screen.
+  const handleDeleteAccount = async () => {
+    // Drop this account's tutorial flag first (while we still know who it is), so
+    // a recycled user id for the same email starts the tour fresh.
+    await clearTutorialFlag();
+    const { error } = await deleteAccount();
+    if (error) {
+      Alert.alert('Could not delete account', error);
+      return;
+    }
+    setActiveSetup(null);
+    setIsPremiumState(false);
+    setScreen('onboarding');
+  };
+
+  // Dev-only: jump to any screen from the DevScreen. Seeds a setup for the
+  // screens that need one so they aren't blank.
+  const devNavigate = async (key) => {
+    const needsSetup = ['setup', 'board-builder', 'revamp', 'revamp-camera-roll'].includes(key);
+    if (needsSetup && !activeSetup) {
+      try {
+        const setups = await getSetups();
+        setActiveSetup(setups[0] || (await createSetup('Dev Setup', 'pc')));
+      } catch (e) {
+        console.warn('[dev] could not seed a setup:', e?.message || e);
+      }
+    }
+    setScreen(key);
+  };
+
+  // Dev-only: jump straight to a tutorial step — route to its screen (seeding a
+  // setup / choosing the right setup view where needed), then arm that step.
+  const devStartTutorial = async (stepId) => {
+    const map = {
+      'home-add': 'home', 'pick-category': 'picker', 'camera-shutter': 'camera',
+      'receipt-save': 'preview', 'cutout-reveal': 'home', 'profile-tab': 'home',
+      'setups-tab': 'profile', 'open-setup': 'profile', 'arrange-board': 'setup',
+      'drag-item': 'setup', 'photo-tab': 'setup', 'add-photo': 'setup',
+      'edit-tags': 'setup', 'place-tag': 'setup', 'all-set': 'home',
+    };
+    const target = map[stepId] || 'home';
+    if (target === 'setup') {
+      setSetupInitialView(['add-photo', 'edit-tags', 'place-tag'].includes(stepId) ? 'photo' : 'board');
+    }
+    await devNavigate(target);
+    startTutorialAtStep(stepId);
+  };
+
   // Settings → "Subscription": Pro users manage/cancel via the store; free users
   // land on the paywall.
   const managePlan = () => {
@@ -459,7 +524,12 @@ export default function App() {
     if (screen === 'onboarding-account') {
       return (
         <OnboardingAccountScreen
-          onContinue={(data) => setScreen('onboarding-founder')}
+          onContinue={(data) => {
+            // A fresh signup always gets its own first-run tour, even if the
+            // email (and recycled user id) matches a just-deleted account.
+            if (data?.isNewAccount) resetTutorialForNewAccount(data.user?.id);
+            setScreen('onboarding-founder');
+          }}
           onBack={() => setScreen('onboarding-style')}
           onSkip={goToFeed}
         />
@@ -469,14 +539,6 @@ export default function App() {
       return (
         <OnboardingFounderScreen
           onContinue={() => setScreen('onboarding-build-setup')}
-        />
-      );
-    }
-    // Optional notification opt-in screen, retained for flows that request it.
-    if (screen === 'notifications-optin') {
-      return (
-        <OnboardingNotificationsScreen
-          onContinue={(prefs) => setScreen('onboarding-profile')}
         />
       );
     }
@@ -668,9 +730,17 @@ export default function App() {
           onOpenProfile={() => setScreen('profile')}
           onLogout={handleLogout}
           onManagePlan={managePlan}
+          onDeleteAccount={handleDeleteAccount}
+          onCommunityFeedback={() => setScreen('community-feedback')}
           isPremium={isPremium}
         />
       );
+    }
+    if (screen === 'community-feedback') {
+      return <CommunityFeedbackScreen onBack={() => setScreen('settings')} />;
+    }
+    if (screen === 'dev') {
+      return <DevScreen onNavigate={devNavigate} onStartStep={devStartTutorial} onClose={() => setScreen('home')} />;
     }
     return (
       <HomeScreen
@@ -719,6 +789,17 @@ export default function App() {
           onSkip={() => closeCelebration(skipTutorial)}
         />
       )}
+
+      {/* Dev-only launcher for the screen navigator. Stripped from prod builds. */}
+      {__DEV__ && screen !== 'dev' && (
+        <TouchableOpacity
+          style={styles.devButton}
+          onPress={() => setScreen('dev')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.devButtonText}>DEV</Text>
+        </TouchableOpacity>
+      )}
     </SafeAreaProvider>
   );
 }
@@ -726,4 +807,10 @@ export default function App() {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, backgroundColor: '#000000', overflow: 'hidden' },
   loadingMedia: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  devButton: {
+    position: 'absolute', left: 12, bottom: 90,
+    backgroundColor: 'rgba(138,226,52,0.92)', borderRadius: 20,
+    paddingVertical: 8, paddingHorizontal: 12, zIndex: 9999, elevation: 50,
+  },
+  devButtonText: { color: '#0E0E12', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
 });

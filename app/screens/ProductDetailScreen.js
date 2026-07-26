@@ -6,7 +6,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -20,15 +19,29 @@ import {
   getPosts,
   getSetups,
   removeSetupItem,
-  setItemPublic,
 } from '../config/setup';
 import BoardPreview from '../components/BoardPreview';
 import { imageUri } from '../config/media';
+import { openAmazonAffiliate, AFFILIATE_DISCLOSURE } from '../config/affiliate';
 
 const C = {
   bg: '#FFFFFF', panel: '#F5F5F7', border: '#ECECEE',
   ink: '#0E0E10', sub: '#8A8A92', sub2: '#4A4A52', link: '#3D6BB3',
 };
+
+// Small cart glyph for the Amazon buy button.
+function CartIcon({ color = '#131A22' }) {
+  return (
+    <Svg width={19} height={19} viewBox="0 0 24 24">
+      <Path
+        d="M3 4h2.2l1.3 12.2a1.5 1.5 0 0 0 1.5 1.35h9.1a1.5 1.5 0 0 0 1.47-1.2l1.35-6.6a.8.8 0 0 0-.78-.95H6.1"
+        stroke={color} strokeWidth={1.9} fill="none" strokeLinecap="round" strokeLinejoin="round"
+      />
+      <Circle cx={9} cy={20} r={1.4} fill={color} />
+      <Circle cx={17.5} cy={20} r={1.4} fill={color} />
+    </Svg>
+  );
+}
 
 const SPEC_LABELS = {
   percentage: 'Size',
@@ -208,22 +221,7 @@ export default function ProductDetailScreen({ item: initialItem, onBack, onOpenS
   const [loading, setLoading] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [pricing, setPricing] = useState(false);
-  const [savingPublic, setSavingPublic] = useState(false);
   const [removing, setRemoving] = useState(false);
-
-  const isPublic = !!item?.isPublic;
-  const togglePublic = async (next) => {
-    if (!item) return;
-    setSavingPublic(true);
-    try {
-      const updated = await setItemPublic(item.id, next);
-      if (updated) setItem(updated);
-    } catch (e) {
-      Alert.alert('Couldn’t update visibility', e.message);
-    } finally {
-      setSavingPublic(false);
-    }
-  };
 
   const refreshPrice = async () => {
     if (!item) return;
@@ -402,22 +400,13 @@ export default function ProductDetailScreen({ item: initialItem, onBack, onOpenS
               </TouchableOpacity>
             </View>
 
-            {/* Public toggle */}
-            <View style={styles.publicRow}>
-              <View style={styles.publicInfo}>
-                <Text style={styles.publicLabel}>{isPublic ? 'Public' : 'Private'}</Text>
-                <Text style={styles.publicHint}>
-                  {isPublic ? 'Visible on your profile and in search' : 'Only you can see this item'}
-                </Text>
-              </View>
-              <Switch
-                value={isPublic}
-                onValueChange={togglePublic}
-                disabled={savingPublic}
-                trackColor={{ false: '#D8D8DC', true: C.ink }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
+            {/* Affiliate buy button — tags an Amazon product URL if we have one,
+                otherwise opens a tagged Amazon search on the product name. */}
+            <TouchableOpacity style={styles.buyAmazonBtn} onPress={() => openAmazonAffiliate(product)} activeOpacity={0.9}>
+              <CartIcon />
+              <Text style={styles.buyAmazonText}>Buy on Amazon</Text>
+            </TouchableOpacity>
+            <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
 
             <View style={styles.usagePill}>
               <View style={styles.usageDots}>
@@ -577,14 +566,15 @@ const styles = StyleSheet.create({
   priceNone: { color: C.sub, fontSize: 14, fontWeight: '500' },
   priceBtn: { backgroundColor: C.ink, borderRadius: 18, paddingVertical: 9, paddingHorizontal: 18, minWidth: 96, alignItems: 'center' },
   priceBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  publicRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-    alignSelf: 'stretch', backgroundColor: C.panel, borderRadius: 14,
-    paddingVertical: 12, paddingHorizontal: 16, marginBottom: 14,
+  buyAmazonBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9,
+    marginTop: 16, paddingVertical: 15, borderRadius: 26, backgroundColor: '#FFA724',
+    borderWidth: 1, borderColor: '#E8951B',
+    shadowColor: '#FF9900', shadowOpacity: 0.32, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
   },
-  publicInfo: { flex: 1, minWidth: 0 },
-  publicLabel: { color: C.ink, fontSize: 15, fontWeight: '700' },
-  publicHint: { color: C.sub, fontSize: 12, marginTop: 2 },
+  buyAmazonText: { color: '#131A22', fontSize: 15.5, fontWeight: '800', letterSpacing: 0.2 },
+  affiliateDisclosure: { color: C.sub, fontSize: 11, textAlign: 'center', marginTop: 10, paddingHorizontal: 8 },
   usagePill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.ink, borderRadius: 20, paddingVertical: 8, paddingHorizontal: 14 },
   usageDots: { flexDirection: 'row', paddingLeft: 4 },
   usageDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#557CAA', borderWidth: 2, borderColor: C.ink, marginLeft: -4 },

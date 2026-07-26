@@ -7,3 +7,6 @@ uploads/
 
 # Generated wallpaper renders
 server/output/
+
+# Loose screenshots at repo root (dev captures — real art lives in app/assets/)
+/*.png

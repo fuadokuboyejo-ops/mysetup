@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { getProOfferings, purchasePackage, restorePurchases } from '../config/purchases';
+import { getProOfferings, purchasePackage, restorePurchases, introOffer } from '../config/purchases';
 
 const HERO = require('../assets/onboarding_trial_hero.png');
 const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
@@ -39,6 +39,10 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
   }, []);
 
   const price = annualPackage?.product?.priceString || '$39.99';
+  const trial = annualPackage ? introOffer(annualPackage) : null;
+  // Use the store's real trial period when available; default to 3-day so the
+  // screen still advertises the trial before the products / real SDK key are live.
+  const trialPeriod = trial?.isFree ? trial.periodText : '3-day';
 
   const startTrial = async () => {
     if (!annualPackage) {
@@ -103,7 +107,7 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
 
           <View style={styles.offer}>
             <Text style={styles.offerText}>
-              <Text style={styles.offerStrong}>3 days free</Text>, then {price}/year
+              <Text style={styles.offerStrong}>{trialPeriod} free trial</Text>, then {price}/year
             </Text>
 
             <TouchableOpacity
@@ -114,7 +118,7 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
             >
               {loading
                 ? <ActivityIndicator color={C.ink} />
-                : <Text style={styles.ctaText}>Start free trial</Text>}
+                : <Text style={styles.ctaText}>Start {trialPeriod} free trial</Text>}
             </TouchableOpacity>
 
             <Text style={styles.cancelText}>Cancel anytime</Text>

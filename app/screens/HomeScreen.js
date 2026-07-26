@@ -366,14 +366,21 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
           contentContainerStyle={styles.feed}
           showsVerticalScrollIndicator={false}
         >
-          {[...userPosts, ...MOCK_SETUPS].map(setup => (
-            <SetupCard
-              key={setup.id}
-              setup={setup}
-              avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
-              onPress={() => setOpenedPost(setup)}
-            />
-          ))}
+          {userPosts.length === 0 ? (
+            <View style={styles.feedEmpty}>
+              <Text style={styles.feedEmptyTitle}>No posts yet</Text>
+              <Text style={styles.feedEmptyHint}>Setups people post will show up here.</Text>
+            </View>
+          ) : (
+            userPosts.map(setup => (
+              <SetupCard
+                key={setup.id}
+                setup={setup}
+                avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
+                onPress={() => setOpenedPost(setup)}
+              />
+            ))
+          )}
         </ScrollView>
 
       </SafeAreaView>
@@ -521,6 +528,9 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   feed: { paddingHorizontal: 14, gap: 12, paddingBottom: 100 },
+  feedEmpty: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 6 },
+  feedEmptyTitle: { color: '#161616', fontSize: 16, fontWeight: '700' },
+  feedEmptyHint: { color: '#6E6E73', fontSize: 14, textAlign: 'center' },
 
   card: {
     backgroundColor: C.card,

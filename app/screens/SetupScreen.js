@@ -390,6 +390,17 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   const arrangeStep = useTutorialStep('arrange-board');
   const arrangeTarget = useTutorialTarget(arrangeStep.active && !arranging);
   const dragStep = useTutorialStep('drag-item');
+  // After the item is placed, spotlight the "Photo" toggle so the user sees
+  // their setup with tags.
+  const photoStep = useTutorialStep('photo-tab');
+  const photoTabTarget = useTutorialTarget(photoStep.active && !arranging);
+  // Then spotlight the "+ Add photo" button and prompt for a full-setup photo.
+  const photoAddStep = useTutorialStep('add-photo');
+  const photoAddTarget = useTutorialTarget(photoAddStep.active && !arranging);
+  // Then spotlight "Edit tags", then coach dragging a tag onto the photo.
+  const editTagsStep = useTutorialStep('edit-tags');
+  const editTagsTarget = useTutorialTarget(editTagsStep.active && view === 'photo' && !tagsOn && !arranging);
+  const placeTagStep = useTutorialStep('place-tag');
   const [postComposerOpen, setPostComposerOpen] = useState(false);
   const [productDetailItem, setProductDetailItem] = useState(null);
   const [productSetupPost, setProductSetupPost] = useState(null);
@@ -521,6 +532,17 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   };
 
   useEffect(() => { load(); }, [load]);
+
+  // Complete the "add a photo" step once a setup photo actually lands (covers
+  // both the camera and library paths, and not a cancelled pick).
+  useEffect(() => {
+    if (photoAddStep.active && setupPhoto) advanceTutorial('add-photo');
+  }, [photoAddStep.active, setupPhoto]);
+
+  // Complete the "place a tag" step once the first tag/dot is dropped on the photo.
+  useEffect(() => {
+    if (placeTagStep.active && dots.length > 0) advanceTutorial('place-tag');
+  }, [placeTagStep.active, dots.length]);
 
   // ── Tag placement helpers ────────────────────────────────────────────────────
   const removeDot = (dotId) => {
@@ -902,7 +924,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
       <View style={[styles.toggleRow, view === 'photo' && { paddingBottom: 0 }]}>
         <View style={styles.toggle}>
           {[['photo','Photo'],['board','Board'],['items','Items']].map(([key, label]) => (
-            <TouchableOpacity key={key} style={[styles.toggleBtn, view === key && styles.toggleActive]} onPress={() => setView(key)}>
+            <TouchableOpacity
+              key={key}
+              ref={key === 'photo' ? photoTabTarget.ref : undefined}
+              onLayout={key === 'photo' ? photoTabTarget.onLayout : undefined}
+              style={[styles.toggleBtn, view === key && styles.toggleActive]}
+              onPress={() => {
+                if (key === 'photo' && photoStep.active) advanceTutorial('photo-tab');
+                setView(key);
+              }}
+            >
               <Text style={[styles.toggleText, view === key && styles.toggleTextActive]}>{label}</Text>
             </TouchableOpacity>
           ))}
@@ -980,7 +1011,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                 })()}
                 <TouchableOpacity
                   style={[styles.tagToggle, styles.tagToggleOn]}
-                  onPress={() => { setTagsOn(false); setSelectedDot(null); }}
+                  onPress={() => {
+                    // Leaving tag mode mid-tutorial: if a tag was placed, roll on;
+                    // if not, end the tour quietly rather than stalling it.
+                    if (placeTagStep.active) {
+                      if (dots.length > 0) advanceTutorial('place-tag');
+                      else skipTutorial();
+                    }
+                    setTagsOn(false);
+                    setSelectedDot(null);
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.tagToggleEye, styles.tagToggleEyeOn]}>✓</Text>
@@ -1043,7 +1083,13 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
                   <Text style={styles.photoPlaceholderIcon}>◻</Text>
                   <Text style={styles.photoPlaceholderText}>No setup photo yet</Text>
                   <Text style={styles.photoPlaceholderHint}>Show off your full desk</Text>
-                  <TouchableOpacity style={styles.addPhotoBtn} onPress={pickPhoto} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    ref={photoAddTarget.ref}
+                    onLayout={photoAddTarget.onLayout}
+                    style={styles.addPhotoBtn}
+                    onPress={pickPhoto}
+                    activeOpacity={0.8}
+                  >
                     <Text style={styles.addPhotoBtnText}>+ Add photo</Text>
                   </TouchableOpacity>
                 </View>
@@ -1070,8 +1116,14 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
               ))}
 
               <TouchableOpacity
+                ref={editTagsTarget.ref}
+                onLayout={editTagsTarget.onLayout}
                 style={styles.tagToggle}
-                onPress={() => { setTagsOn(true); setSelectedDot(null); }}
+                onPress={() => {
+                  if (editTagsStep.active) advanceTutorial('edit-tags');
+                  setTagsOn(true);
+                  setSelectedDot(null);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.tagToggleEye}>⊕</Text>
@@ -1314,6 +1366,47 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
           onTargetPress={() => { advanceTutorial('arrange-board'); setArranging(true); }}
           onSkip={skipTutorial}
         />
+      )}
+
+      {/* Tutorial: spotlight the "Photo" toggle so the user views their setup. */}
+      {photoStep.active && !arranging && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={photoStep.stepIndex}
+          targetRect={photoTabTarget.rect}
+          onTargetPress={() => { advanceTutorial('photo-tab'); setView('photo'); }}
+          onSkip={skipTutorial}
+        />
+      )}
+
+      {/* Tutorial: spotlight "+ Add photo" and prompt for a full-setup photo. */}
+      {photoAddStep.active && !arranging && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={photoAddStep.stepIndex}
+          targetRect={photoAddTarget.rect}
+          onTargetPress={pickPhoto}
+          onSkip={skipTutorial}
+        />
+      )}
+
+      {/* Tutorial: spotlight "Edit tags" on the Photo view. */}
+      {editTagsStep.active && !arranging && view === 'photo' && !tagsOn && (
+        <TutorialOverlay
+          presentation="modal"
+          steps={TUTORIAL_STEPS}
+          stepIndex={editTagsStep.stepIndex}
+          targetRect={editTagsTarget.rect}
+          onTargetPress={() => { advanceTutorial('edit-tags'); setTagsOn(true); setSelectedDot(null); }}
+          onSkip={skipTutorial}
+        />
+      )}
+
+      {/* Tutorial: coach pill while tagging — no scrim, so the drag isn't blocked. */}
+      {placeTagStep.active && tagsOn && (
+        <CheerToast text={placeTagStep.step?.text} top={90} persist />
       )}
     </View>
   );

@@ -19,7 +19,7 @@ import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, jumpTutorial, skipTut
 // Shown on the profile — swap for the signed-in user's handle once auth lands.
 const USERNAME = 'fuad';
 
-const TABS = ['Items', 'Setups'];
+const TABS = ['Items', 'Setups', 'Collections'];
 
 // Exactly 3 piece columns: screen width minus side padding (16 each) and the two
 // 10px gaps between the three cards. Pixel width avoids the "%+gap wraps" bug.
@@ -224,9 +224,9 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   const totalItems = allItems.length;
   const totalItemValue = allItems.reduce((sum, item) => sum + itemPrice(item), 0);
   const formattedItemValue = formatPrice(totalItemValue);
-  // Keep the old setup-photo backdrop as a fallback until the user chooses a
-  // dedicated banner. A selected profile photo takes priority over OAuth art.
-  const fallbackBannerPhoto = setups.find(s => s.photo)?.photo || null;
+  // The banner is only ever a banner the user explicitly chose — a setup photo
+  // must never be promoted to the banner (that surprised users who added a
+  // setup photo and found it became their profile banner).
   const bannerUri = profileMedia.bannerBase64
     ? imageUri(profileMedia.bannerBase64)
     : profileMedia.bannerUrl || null;
@@ -292,9 +292,9 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
 
       {/* Banner hero */}
       <View style={S.banner}>
-        {bannerUri || fallbackBannerPhoto ? (
+        {bannerUri ? (
           <Image
-            source={{ uri: bannerUri || imageUri(fallbackBannerPhoto) }}
+            source={{ uri: bannerUri }}
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
           />
@@ -405,6 +405,12 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
             </View>
           </ScrollView>
         )
+      ) : activeTab === 'Collections' ? (
+        /* Collections — grouped gear (feature not built yet) */
+        <View style={S.empty}>
+          <Text style={S.emptyText}>No collections yet</Text>
+          <Text style={S.emptyHint}>Group your gear into collections — coming soon.</Text>
+        </View>
       ) : (
         /* Setups — the user's saved setups */
         <ScrollView contentContainerStyle={S.grid} showsVerticalScrollIndicator={false}>
@@ -507,9 +513,9 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
               disabled={!!savingProfileImage}
               activeOpacity={0.84}
             >
-              {bannerUri || fallbackBannerPhoto ? (
+              {bannerUri ? (
                 <Image
-                  source={{ uri: bannerUri || imageUri(fallbackBannerPhoto) }}
+                  source={{ uri: bannerUri }}
                   style={StyleSheet.absoluteFill}
                   resizeMode="cover"
                 />
