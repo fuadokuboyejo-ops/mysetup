@@ -1,0 +1,211 @@
+<title>mysetup — Terms of Use</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ground: #0C0E12; --panel: #12151B; --line: #232833;
+    --ink: #EAEDF2; --muted: #99A2AF; --faint: #6C7480;
+    --accent: #4FD8E4; --accent-ink: #063138;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --ground: #F7F8FA; --panel: #FFFFFF; --line: #E6E9EF; --ink: #14161A; --muted: #5A626E; --faint: #8A929E; --accent: #0FA3B1; --accent-ink: #E6FBFD; }
+  }
+  :root[data-theme="dark"] { --ground: #0C0E12; --panel: #12151B; --line: #232833; --ink: #EAEDF2; --muted: #99A2AF; --faint: #6C7480; --accent: #4FD8E4; --accent-ink: #063138; }
+  :root[data-theme="light"] { --ground: #F7F8FA; --panel: #FFFFFF; --line: #E6E9EF; --ink: #14161A; --muted: #5A626E; --faint: #8A929E; --accent: #0FA3B1; --accent-ink: #E6FBFD; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.65; -webkit-font-smoothing: antialiased;
+    background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 44px 44px; background-position: -1px -1px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  header.doc { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--ground) 86%, transparent); backdrop-filter: blur(6px); }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.02em; text-decoration: none; color: var(--ink); }
+  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+  .back { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); text-decoration: none; }
+  .back:hover { color: var(--accent); }
+
+  .hero { padding: 64px 0 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-size: clamp(2.1rem, 6vw, 3.1rem); line-height: 1.03; letter-spacing: -0.03em; margin: 0 0 16px; text-wrap: balance; font-weight: 800; }
+  .meta { font-family: var(--mono); font-size: 12.5px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .meta b { color: var(--muted); font-weight: 500; }
+
+  .toc { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 20px 22px; margin: 8px 0 44px; }
+  .toc h2 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin: 0 0 12px; }
+  .toc ol { margin: 0; padding: 0; list-style: none; counter-reset: toc; columns: 2; column-gap: 28px; }
+  .toc li { counter-increment: toc; margin: 0 0 8px; break-inside: avoid; }
+  .toc a { color: var(--ink); text-decoration: none; font-size: 14.5px; display: flex; gap: 10px; }
+  .toc a::before { content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .toc a:hover { color: var(--accent); }
+
+  main { padding-bottom: 40px; }
+  section { padding: 14px 0 22px; scroll-margin-top: 84px; }
+  section > h2 { font-size: 1.4rem; letter-spacing: -0.01em; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 12px; }
+  section > h2 .num { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+  p, li { color: var(--ink); font-size: 15.5px; }
+  p { margin: 0 0 14px; }
+  .lead { color: var(--muted); font-size: 16.5px; }
+  ul { margin: 0 0 16px; padding-left: 4px; list-style: none; }
+  ul li { position: relative; padding-left: 22px; margin: 0 0 9px; color: var(--muted); }
+  ul li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 6px; height: 6px; border-radius: 1px; background: var(--accent); }
+  ul li b { color: var(--ink); }
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 16px 18px; margin: 8px 0 20px; }
+  .callout p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .callout b { color: var(--ink); }
+
+  footer.doc { border-top: 1px solid var(--line); margin-top: 24px; padding: 30px 0 56px; }
+  footer.doc .row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
+  footer.doc a { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); text-decoration: none; }
+  footer.doc a:hover { color: var(--accent); }
+  footer.doc .c { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+  @media (max-width: 560px) { .toc ol { columns: 1; } }
+</style>
+
+<header class="doc">
+  <div class="wrap topbar">
+    <a class="brand" href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc"><span class="dot"></span> mysetup</a>
+    <a class="back" href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc">← Home</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <p class="eyebrow">Legal</p>
+    <h1>Terms of Use</h1>
+    <div class="meta">
+      <span><b>Effective:</b> July 26, 2026</span>
+      <span><b>Applies to:</b> the mysetup mobile app</span>
+      <span><b>Contact:</b> mysetupapp@gmail.com</span>
+    </div>
+  </div>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#accept">Acceptance</a></li>
+      <li><a href="#account">Your account</a></li>
+      <li><a href="#content">Your content</a></li>
+      <li><a href="#conduct">Acceptable use</a></li>
+      <li><a href="#subs">Subscriptions &amp; trials</a></li>
+      <li><a href="#affiliate">Affiliate links</a></li>
+      <li><a href="#ai">AI features</a></li>
+      <li><a href="#ip">Our rights</a></li>
+      <li><a href="#termination">Termination</a></li>
+      <li><a href="#disclaimer">Disclaimers</a></li>
+      <li><a href="#liability">Liability</a></li>
+      <li><a href="#law">Governing law &amp; changes</a></li>
+    </ol>
+  </nav>
+</div>
+
+<main class="wrap">
+  <section id="accept">
+    <h2><span class="num">01</span> Acceptance</h2>
+    <p class="lead">These Terms are a legal agreement between you and mysetup ("we", "us") governing your use of the mysetup app. By downloading or using the app, you agree to these Terms and to our <a class="inline" href="https://claude.ai/code/artifact/9e43e7e2-a85e-40d3-aa36-db192327f5d7">Privacy Policy</a>.</p>
+    <p>You must be at least 13 years old (or the minimum digital-consent age where you live) to use mysetup.</p>
+  </section>
+
+  <section id="account">
+    <h2><span class="num">02</span> Your account</h2>
+    <ul>
+      <li>You're responsible for keeping your login credentials secure and for activity under your account.</li>
+      <li>Provide accurate information and keep it up to date.</li>
+      <li>Tell us promptly at <a class="inline" href="mailto:mysetupapp@gmail.com">mysetupapp@gmail.com</a> if you suspect unauthorized use.</li>
+    </ul>
+  </section>
+
+  <section id="content">
+    <h2><span class="num">03</span> Your content</h2>
+    <p>You keep ownership of the photos, boards, posts, and other content you create ("Your Content"). By posting Your Content, you grant us a non-exclusive, worldwide, royalty-free license to host, store, display, and distribute it <b>within the app</b> for the purpose of operating and promoting mysetup.</p>
+    <p>You are responsible for Your Content and confirm you have the rights to share it. Anything you mark public may be visible to other users.</p>
+  </section>
+
+  <section id="conduct">
+    <h2><span class="num">04</span> Acceptable use</h2>
+    <p>Don't use mysetup to:</p>
+    <ul>
+      <li>Post unlawful, hateful, harassing, or infringing content.</li>
+      <li>Upload photos of other people without consent, or sensitive personal documents.</li>
+      <li>Impersonate others or misrepresent your affiliation.</li>
+      <li>Attempt to break, overload, reverse-engineer, or abuse the app or its AI features.</li>
+      <li>Scrape data or use the app to build a competing dataset.</li>
+    </ul>
+    <p>We may remove content or restrict accounts that violate these Terms.</p>
+  </section>
+
+  <section id="subs">
+    <h2><span class="num">05</span> Subscriptions &amp; trials</h2>
+    <p>mysetup offers an optional <b>Pro</b> subscription with monthly and yearly plans, which may include a free trial.</p>
+    <div class="callout"><p><b>Auto-renewal.</b> Paid subscriptions are billed through your Apple App Store or Google Play account and <b>renew automatically</b> at the then-current price unless you cancel at least 24 hours before the end of the current period. Any free-trial period ends when a subscription is purchased. Manage or cancel anytime in your App Store or Google Play account settings; deleting the app alone does not cancel a subscription.</p></div>
+    <ul>
+      <li>Prices are shown in the app before purchase and may vary by region.</li>
+      <li>Unused portions of a free trial are forfeited when you buy a subscription.</li>
+      <li>Refunds are handled by Apple or Google under their policies, not by us directly.</li>
+    </ul>
+  </section>
+
+  <section id="affiliate">
+    <h2><span class="num">06</span> Affiliate links</h2>
+    <p>Some product links in mysetup are affiliate links. As an Amazon Associate and through similar programs, we may earn a commission from qualifying purchases at no extra cost to you. We are not the seller and are not responsible for third-party products, prices, or fulfillment.</p>
+  </section>
+
+  <section id="ai">
+    <h2><span class="num">07</span> AI features</h2>
+    <p>AI Revamp, gear scan, and similar features generate results using automated models. Output may be inaccurate, imperfect, or not to scale, and is provided for inspiration only. Verify product details and specs before making purchases. Don't rely on AI output as professional advice.</p>
+  </section>
+
+  <section id="ip">
+    <h2><span class="num">08</span> Our rights</h2>
+    <p>The mysetup app, its name, design, and software are owned by us and protected by intellectual-property laws. We grant you a limited, personal, non-transferable license to use the app. You may not copy, resell, or create derivative apps from it.</p>
+  </section>
+
+  <section id="termination">
+    <h2><span class="num">09</span> Termination</h2>
+    <p>You can stop using mysetup and delete your account at any time in <b>Settings → Delete account</b>. We may suspend or terminate access if you violate these Terms or to protect the app and its users. Sections that by nature should survive termination (ownership, disclaimers, liability) will continue to apply.</p>
+  </section>
+
+  <section id="disclaimer">
+    <h2><span class="num">10</span> Disclaimers</h2>
+    <p>mysetup is provided "as is" and "as available" without warranties of any kind, whether express or implied, including fitness for a particular purpose and non-infringement. We don't guarantee the app will be uninterrupted, error-free, or that AI results will meet your expectations.</p>
+  </section>
+
+  <section id="liability">
+    <h2><span class="num">11</span> Limitation of liability</h2>
+    <p>To the maximum extent permitted by law, mysetup will not be liable for any indirect, incidental, or consequential damages, or for lost data or profits, arising from your use of the app. Our total liability for any claim is limited to the amount you paid us in the 12 months before the claim.</p>
+  </section>
+
+  <section id="law">
+    <h2><span class="num">12</span> Governing law &amp; changes</h2>
+    <p>These Terms are governed by the laws of the Province of Ontario, Canada, without regard to conflict-of-law rules. We may update these Terms as the app evolves; material changes are reflected by the "Effective" date above. Continued use after an update means you accept the revised Terms.</p>
+    <div class="callout"><p>Questions about these Terms? Email <b>mysetupapp@gmail.com</b>.</p></div>
+  </section>
+</main>
+
+<footer class="doc">
+  <div class="wrap row">
+    <div class="c">© 2026 mysetup</div>
+    <div style="display:flex; gap:22px;">
+      <a href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc">Home</a>
+      <a href="https://claude.ai/code/artifact/9e43e7e2-a85e-40d3-aa36-db192327f5d7">Privacy Policy</a>
+      <a href="mailto:mysetupapp@gmail.com">Contact</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const t = document.querySelector(a.getAttribute('href'));
+      if (t) { e.preventDefault(); t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+    });
+  });
+</script>

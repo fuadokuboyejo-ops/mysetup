@@ -149,7 +149,7 @@ export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onMana
             <TouchableOpacity style={S.promo} onPress={onManagePlan} activeOpacity={0.85}>
               <View style={S.promoText}>
                 <Text style={S.promoTitle}>Go Pro</Text>
-                <Text style={S.promoSub}>Unlimited AI revamps and a bigger gear library.</Text>
+                <Text style={S.promoSub}>100 AI revamps a month and a bigger gear library.</Text>
               </View>
               <View style={S.promoBadge}><StarIcon /></View>
             </TouchableOpacity>

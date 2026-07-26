@@ -1,0 +1,253 @@
+<title>mysetup — Privacy Policy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ground: #0C0E12;
+    --panel: #12151B;
+    --line: #232833;
+    --ink: #EAEDF2;
+    --muted: #99A2AF;
+    --faint: #6C7480;
+    --accent: #4FD8E4;
+    --accent-ink: #063138;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --ground: #F7F8FA; --panel: #FFFFFF; --line: #E6E9EF;
+      --ink: #14161A; --muted: #5A626E; --faint: #8A929E;
+      --accent: #0FA3B1; --accent-ink: #E6FBFD;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0C0E12; --panel: #12151B; --line: #232833;
+    --ink: #EAEDF2; --muted: #99A2AF; --faint: #6C7480;
+    --accent: #4FD8E4; --accent-ink: #063138;
+  }
+  :root[data-theme="light"] {
+    --ground: #F7F8FA; --panel: #FFFFFF; --line: #E6E9EF;
+    --ink: #14161A; --muted: #5A626E; --faint: #8A929E;
+    --accent: #0FA3B1; --accent-ink: #E6FBFD;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-position: -1px -1px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+  header.doc {
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--ground) 86%, transparent);
+    backdrop-filter: blur(6px);
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.02em; text-decoration: none; color: var(--ink); }
+  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+  .back { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); text-decoration: none; }
+  .back:hover { color: var(--accent); }
+
+  .hero { padding: 64px 0 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-size: clamp(2.1rem, 6vw, 3.1rem); line-height: 1.03; letter-spacing: -0.03em; margin: 0 0 16px; text-wrap: balance; font-weight: 800; }
+  .meta { font-family: var(--mono); font-size: 12.5px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .meta b { color: var(--muted); font-weight: 500; }
+
+  .toc { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 20px 22px; margin: 8px 0 44px; }
+  .toc h2 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin: 0 0 12px; }
+  .toc ol { margin: 0; padding: 0; list-style: none; counter-reset: toc; columns: 2; column-gap: 28px; }
+  .toc li { counter-increment: toc; margin: 0 0 8px; break-inside: avoid; }
+  .toc a { color: var(--ink); text-decoration: none; font-size: 14.5px; display: flex; gap: 10px; }
+  .toc a::before { content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .toc a:hover { color: var(--accent); }
+
+  main { padding-bottom: 40px; }
+  section { padding: 14px 0 22px; scroll-margin-top: 84px; }
+  section > h2 { font-size: 1.4rem; letter-spacing: -0.01em; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 12px; }
+  section > h2 .num { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 1.02rem; margin: 20px 0 6px; }
+  p, li { color: var(--ink); font-size: 15.5px; }
+  p { margin: 0 0 14px; }
+  .lead { color: var(--muted); font-size: 16.5px; }
+  ul { margin: 0 0 16px; padding-left: 4px; list-style: none; }
+  ul li { position: relative; padding-left: 22px; margin: 0 0 9px; color: var(--muted); }
+  ul li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 6px; height: 6px; border-radius: 1px; background: var(--accent); }
+  ul li b { color: var(--ink); }
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; font-size: 14px; }
+  .tableScroll { overflow-x: auto; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+  td b { color: var(--ink); }
+  td { color: var(--muted); }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 16px 18px; margin: 8px 0 20px; }
+  .callout p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .callout b { color: var(--ink); }
+
+  footer.doc { border-top: 1px solid var(--line); margin-top: 24px; padding: 30px 0 56px; }
+  footer.doc .row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
+  footer.doc a { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); text-decoration: none; }
+  footer.doc a:hover { color: var(--accent); }
+  footer.doc .c { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+  @media (max-width: 560px) { .toc ol { columns: 1; } }
+</style>
+
+<header class="doc">
+  <div class="wrap topbar">
+    <a class="brand" href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc"><span class="dot"></span> mysetup</a>
+    <a class="back" href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc">← Home</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <p class="eyebrow">Legal</p>
+    <h1>Privacy Policy</h1>
+    <div class="meta">
+      <span><b>Effective:</b> July 26, 2026</span>
+      <span><b>Applies to:</b> the mysetup mobile app</span>
+      <span><b>Contact:</b> mysetupapp@gmail.com</span>
+    </div>
+  </div>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#collect">What we collect</a></li>
+      <li><a href="#use">How we use it</a></li>
+      <li><a href="#share">Who we share it with</a></li>
+      <li><a href="#photos">Photos &amp; AI processing</a></li>
+      <li><a href="#retention">Retention &amp; deletion</a></li>
+      <li><a href="#rights">Your rights</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#children">Children</a></li>
+      <li><a href="#changes">Changes</a></li>
+    </ol>
+  </nav>
+</div>
+
+<main class="wrap">
+  <section id="overview">
+    <h2><span class="num">01</span> Overview</h2>
+    <p class="lead">mysetup ("we", "us") is an app for building, sharing, and reimagining desk setups. This policy explains what we collect, why, and the choices you have. We aim to collect only what the app needs to work.</p>
+    <p>By using mysetup you agree to this policy. If you don't agree, please don't use the app.</p>
+  </section>
+
+  <section id="collect">
+    <h2><span class="num">02</span> What we collect</h2>
+    <div class="tableScroll">
+    <table>
+      <thead><tr><th>Category</th><th>Examples</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><b>Account</b></td><td>Email address; name from Google Sign-In (if you use it)</td><td>Create and secure your account</td></tr>
+        <tr><td><b>Profile</b></td><td>Username, display name, bio, avatar</td><td>Show your public profile</td></tr>
+        <tr><td><b>Your content</b></td><td>Photos of your gear and setups, boards, posts, captions, tags</td><td>Store and display what you create</td></tr>
+        <tr><td><b>Subscription</b></td><td>Purchase status, entitlement, trial state</td><td>Unlock and manage Pro features</td></tr>
+        <tr><td><b>Usage</b></td><td>AI generation counts, feature interactions, feedback you submit</td><td>Enforce plan limits, improve the app</td></tr>
+        <tr><td><b>Device &amp; logs</b></td><td>App version, device type, crash and error logs</td><td>Diagnose problems and keep the app stable</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>We do <b>not</b> collect your payment card details. Purchases are handled by the Apple App Store or Google Play, which share only the purchase result with us (via RevenueCat).</p>
+  </section>
+
+  <section id="use">
+    <h2><span class="num">03</span> How we use it</h2>
+    <ul>
+      <li>To provide the core app: your library, boards, posts, and profile.</li>
+      <li>To generate <b>AI Revamp</b> renders and <b>gear scan</b> results you request.</li>
+      <li>To manage subscriptions, free trials, and plan limits.</li>
+      <li>To keep the community safe and respond to feedback.</li>
+      <li>To fix bugs, monitor performance, and improve features.</li>
+    </ul>
+    <p>We do not sell your personal information, and we do not use your content to train our own advertising profiles.</p>
+  </section>
+
+  <section id="share">
+    <h2><span class="num">04</span> Who we share it with</h2>
+    <p>We share data only with service providers that help run the app, each for the purpose below:</p>
+    <div class="tableScroll">
+    <table>
+      <thead><tr><th>Provider</th><th>Purpose</th><th>Data involved</th></tr></thead>
+      <tbody>
+        <tr><td><b>Supabase</b></td><td>Accounts, database, file storage</td><td>Account, profile, content</td></tr>
+        <tr><td><b>Google Sign-In</b></td><td>Optional sign-in</td><td>Email, name</td></tr>
+        <tr><td><b>RevenueCat</b></td><td>Subscription management</td><td>Purchase &amp; entitlement status</td></tr>
+        <tr><td><b>Apple / Google</b></td><td>Payment processing, app delivery</td><td>Purchase transactions</td></tr>
+        <tr><td><b>Google (Gemini)</b></td><td>AI Revamp image generation</td><td>Setup &amp; gear photos you submit</td></tr>
+        <tr><td><b>Mistral AI</b></td><td>Gear scan (reading specs from a photo)</td><td>The photo you scan</td></tr>
+        <tr><td><b>Background-removal service</b></td><td>Cutting out gear from item photos</td><td>The item photo you add</td></tr>
+        <tr><td><b>eBay</b></td><td>Live price &amp; buy-link lookup</td><td>Product name/brand (text only)</td></tr>
+        <tr><td><b>Amazon Associates</b></td><td>Affiliate "Buy" links</td><td>Clicks are tracked by Amazon on their site</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>We may also disclose information if required by law, or to protect the rights, safety, and security of our users and the app.</p>
+  </section>
+
+  <section id="photos">
+    <h2><span class="num">05</span> Photos &amp; AI processing</h2>
+    <p>When you use AI Revamp, gear scan, or background removal, the relevant photo is sent to the AI provider listed above to produce the result you asked for. This happens only when you trigger those features.</p>
+    <div class="callout"><p><b>Good to know:</b> these providers process your image to return a result and are not permitted to use your photos to train their models for their own purposes. Don't upload photos that contain other people or sensitive documents.</p></div>
+  </section>
+
+  <section id="retention">
+    <h2><span class="num">06</span> Retention &amp; deletion</h2>
+    <p>We keep your data while your account is active. You can delete individual items, boards, and posts at any time in the app.</p>
+    <p>You can permanently delete your entire account from <b>Settings → Delete account</b>. This removes your profile, setups, gear, posts, and stored photos, and cannot be undone.</p>
+  </section>
+
+  <section id="rights">
+    <h2><span class="num">07</span> Your rights</h2>
+    <p>Depending on where you live, you may have the right to access, correct, export, or delete your personal information, and to object to certain processing. You can exercise most of these directly in the app, or by emailing <a class="inline" href="mailto:mysetupapp@gmail.com">mysetupapp@gmail.com</a>.</p>
+  </section>
+
+  <section id="security">
+    <h2><span class="num">08</span> Security</h2>
+    <p>Data is transmitted over encrypted connections and stored with our hosting provider under access controls (row-level security) so that you can only reach your own content. No system is perfectly secure, but we work to protect your information and limit access to it.</p>
+  </section>
+
+  <section id="children">
+    <h2><span class="num">09</span> Children</h2>
+    <p>mysetup is not directed to children under 13 (or the minimum age in your country). We do not knowingly collect data from them. If you believe a child has provided us information, contact us and we'll remove it.</p>
+  </section>
+
+  <section id="changes">
+    <h2><span class="num">10</span> Changes</h2>
+    <p>We may update this policy as the app evolves. Material changes will be reflected by the "Effective" date above and, where appropriate, noted in the app. Continued use after an update means you accept the revised policy.</p>
+    <div class="callout"><p>Questions about privacy? Email <b>mysetupapp@gmail.com</b> and we'll help.</p></div>
+  </section>
+</main>
+
+<footer class="doc">
+  <div class="wrap row">
+    <div class="c">© 2026 mysetup</div>
+    <div style="display:flex; gap:22px;">
+      <a href="https://claude.ai/code/artifact/34d8133b-3179-4d75-a2ad-11f9d69754bc">Home</a>
+      <a href="https://claude.ai/code/artifact/961cc0a7-c5a6-4e7c-b304-84da0335df4f">Terms of Use</a>
+      <a href="mailto:mysetupapp@gmail.com">Contact</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const t = document.querySelector(a.getAttribute('href'));
+      if (t) { e.preventDefault(); t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+    });
+  });
+</script>
