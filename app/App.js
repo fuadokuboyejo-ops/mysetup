@@ -20,7 +20,7 @@ import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
 import { createSetup, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
 import { initPurchases, hasProEntitlement } from './config/purchases';
 import { supabase } from './config/supabase';
-import { handleAuthRedirect } from './config/auth';
+import { handleAuthRedirect, signOut } from './config/auth';
 import { imageUri } from './config/media';
 import {
   TUTORIAL_STEPS, initTutorial, preloadTutorial, advanceTutorial, jumpTutorial, rewindTutorial, completeTutorial,
@@ -36,6 +36,7 @@ import BoardBuilderScreen from './screens/BoardBuilderScreen';
 import GearReceiptScreen from './screens/GearReceiptScreen';
 import SetupScreen from './screens/SetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import SettingsScreen from './screens/SettingsScreen';
 import RevampMenuScreen from './screens/RevampMenuScreen';
 import RevampSetupPickerScreen from './screens/RevampSetupPickerScreen';
 import RevampCameraRollScreen from './screens/RevampCameraRollScreen';
@@ -67,7 +68,7 @@ const PRELOAD_ASSETS = [
 // Dev-only: start on the onboarding flow even when a session already exists, so
 // the whole first-run journey (onboarding → tutorial) can be walked without
 // signing out. Set to false for normal signed-in launches. Ignored in prod.
-const DEV_FORCE_ONBOARDING = true;
+const DEV_FORCE_ONBOARDING = false;
 
 export default function App() {
   // Gate the app behind an initial asset-preload + setup load.
@@ -139,7 +140,26 @@ export default function App() {
       ]);
       if (!active) return;
 
-      const session = sessionResult.data?.session || null;
+      let session = sessionResult.data?.session || null;
+
+      // getSession() only reads the cached token — it can't tell that the
+      // account was deleted or the token revoked. Confirm the user still exists
+      // server-side before trusting it, otherwise a stale session strands the
+      // app on a broken Home instead of returning to onboarding. A network
+      // error (no auth status) is NOT treated as invalid, so offline users with
+      // a real session stay logged in.
+      if (session) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (!active) return;
+        const authInvalid = userError
+          ? userError.status === 401 || userError.status === 403
+          : !userData?.user;
+        if (authInvalid) {
+          await supabase.auth.signOut().catch(() => {});
+          session = null; // fall through to the default 'onboarding' screen
+        }
+      }
+
       if (session) {
         try {
           // Premium is unlocked if EITHER the local flag or the RevenueCat
@@ -294,6 +314,25 @@ export default function App() {
 
   const handleSetupDeleted = (setupId) => {
     if (activeSetup?.id === setupId) setActiveSetup(null);
+  };
+
+  // Sign out and return to the onboarding opener. Clears session-scoped state so
+  // nothing from the previous account bleeds into the next sign-in.
+  const handleLogout = async () => {
+    await signOut().catch(() => {});
+    setActiveSetup(null);
+    setIsPremiumState(false);
+    setScreen('onboarding');
+  };
+
+  // Settings → "Subscription": Pro users manage/cancel via the store; free users
+  // land on the paywall.
+  const managePlan = () => {
+    if (isPremium) {
+      Alert.alert('mysetup Pro', "You're on Pro. Manage or cancel your subscription in your device's App Store / Play Store account settings.");
+    } else {
+      setScreen('revamp-paywall');
+    }
   };
 
   const buildSetup = (setup) => {
@@ -622,12 +661,24 @@ export default function App() {
         />
       );
     }
+    if (screen === 'settings') {
+      return (
+        <SettingsScreen
+          onBack={() => setScreen('home')}
+          onOpenProfile={() => setScreen('profile')}
+          onLogout={handleLogout}
+          onManagePlan={managePlan}
+          isPremium={isPremium}
+        />
+      );
+    }
     return (
       <HomeScreen
         onStartScan={() => setScreen('picker')}
         onViewSetup={() => setScreen('profile')}
         onRevamp={openRevamp}
         onSearch={() => setScreen('search')}
+        onOpenSettings={() => setScreen('settings')}
       />
     );
   }

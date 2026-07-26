@@ -1,7 +1,8 @@
 // Shared grid model for board builder + setup board view.
 
 export const COLS = 6;
-export const MAX_ROWS = 4;
+export const MAX_ROWS = 4;        // tallest a single slot may be
+export const MAX_BOARD_ROWS = 6;  // tallest the whole board may grow
 export const GAP = 8;
 export const ROW_UNIT = 58;
 
@@ -52,6 +53,49 @@ export function computeLayout(nodeList, boardW) {
   }
   const rows = Math.max(maxRows, 3);
   return { rects, height: rows * ROW_UNIT + (rows + 1) * GAP, colW };
+}
+
+// Total grid rows a node list occupies — used to enforce the board size cap.
+export function boardRowCount(nodeList) {
+  let maxRow = 0;
+  for (const node of nodeList || []) {
+    const { rh } = nodeSpan(node);
+    maxRow = Math.max(maxRow, (node.row ?? 0) + rh);
+  }
+  return maxRow;
+}
+
+// Collapse fully-empty grid rows so slots never leave a blank band — e.g. after a
+// slot that was pushed down to make room for a top-insert gets moved away again,
+// leaving row 0 empty. Only rows where NO node has any cell are removed; occupied
+// rows are never reordered or repacked, so the user's arrangement is preserved and
+// slots that share a row stay aligned (they get the same upward shift).
+export function compactRows(nodeList) {
+  if (!nodeList?.length) return nodeList;
+
+  const occupiedRows = new Set();
+  let maxRow = 0;
+  for (const node of nodeList) {
+    const { rh } = nodeSpan(node);
+    const row = node.row ?? 0;
+    for (let r = row; r < row + rh; r++) occupiedRows.add(r);
+    maxRow = Math.max(maxRow, row + rh - 1);
+  }
+
+  // shiftForRow[r] = how many empty rows sit above row r (cumulative).
+  const shiftForRow = [];
+  let emptyAbove = 0;
+  for (let r = 0; r <= maxRow; r++) {
+    if (!occupiedRows.has(r)) emptyAbove++;
+    shiftForRow[r] = emptyAbove;
+  }
+  if (emptyAbove === 0) return nodeList; // nothing to collapse
+
+  return nodeList.map(node => {
+    const row = node.row ?? 0;
+    const shift = shiftForRow[row] ?? 0;
+    return shift > 0 ? { ...node, row: row - shift } : node;
+  });
 }
 
 // PC / default board.

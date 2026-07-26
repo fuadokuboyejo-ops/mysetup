@@ -98,9 +98,11 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
   }, []);
 
   const measureTutorialTargets = useCallback(() => {
-    // Wait for the item count to land first — it reflows the page, and measuring
-    // before that yields oversized cutouts that leave the screen looking undimmed.
-    if (!itemsLoaded || !pickStep.active || pendingPhoto || tutorialMeasureQueued.current) return;
+    // Measure as soon as the step is active. The category cards are static and
+    // already on screen, so the spotlight must NOT wait on getAllItems() — that
+    // network fetch only feeds the item-count stat. If the count later lands and
+    // reflows the page, the effect below re-runs and re-measures to snap the holes.
+    if (!pickStep.active || pendingPhoto || tutorialMeasureQueued.current) return;
     tutorialMeasureQueued.current = true;
     requestAnimationFrame(() => {
       tutorialMeasureQueued.current = false;
@@ -118,15 +120,17 @@ export default function ProductPickerScreen({ onSelect, onBack, onGoToLibrary, o
         });
       });
     });
-  }, [itemsLoaded, pendingPhoto, pickStep.active]);
+  }, [pendingPhoto, pickStep.active]);
 
   useEffect(() => {
-    if (!itemsLoaded || !pickStep.active || pendingPhoto) {
+    if (!pickStep.active || pendingPhoto) {
       setTutorialRects([]);
       return undefined;
     }
-    // Data has landed, so the layout is final — measure now, with a couple of
-    // quick retries in case measureInWindow still reports 0s on the first pass.
+    // Measure right away using the current layout so the spotlight appears the
+    // moment the page is on screen — no waiting on the network. `itemsLoaded` is
+    // still a dependency: when the count lands and reflows the page, this effect
+    // re-runs and re-measures, snapping the holes to the final positions.
     const timers = [0, 80, 220, 500].map(ms => setTimeout(measureTutorialTargets, ms));
     return () => timers.forEach(clearTimeout);
   }, [itemsLoaded, measureTutorialTargets, pendingPhoto, pickStep.active]);

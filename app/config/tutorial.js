@@ -147,6 +147,12 @@ export function isTutorialActive() {
 // the real experience. Ignored in production builds.
 const DEV_START_STEP = null;
 
+// Dev-only: replay the whole tutorial on every launch even after it's been
+// completed/skipped. Handy while building the tour, but it means reloads keep
+// re-showing it — set to false for normal testing so completion sticks.
+// Ignored in production (the completed flag always wins there).
+const DEV_REPLAY_TUTORIAL = false;
+
 // The "tutorial already completed" flag, read once from AsyncStorage at startup
 // (see preloadTutorial) and cached here. Having it in memory lets initTutorial
 // flip the tutorial on synchronously — otherwise Home paints a frame before the
@@ -167,13 +173,14 @@ export async function preloadTutorial() {
 }
 
 // Called when the user first lands on Home. Shows the tutorial exactly once —
-// except in dev, where it replays every launch (same convenience the old
-// coach mark had).
+// once completed or skipped it never re-shows, so reloads land straight on the
+// feed. (Dev builds can force a replay via DEV_REPLAY_TUTORIAL.)
 export function initTutorial() {
   if (state.status !== 'idle') return;
   const startIndex = __DEV__ && DEV_START_STEP ? Math.max(0, tutorialStepIndex(DEV_START_STEP)) : 0;
+  const forceReplay = __DEV__ && DEV_REPLAY_TUTORIAL;
   const activate = (done) =>
-    setState(!done || __DEV__ ? { status: 'active', stepIndex: startIndex } : { status: 'done', stepIndex: 0 });
+    setState(!done || forceReplay ? { status: 'active', stepIndex: startIndex } : { status: 'done', stepIndex: 0 });
 
   // Preloaded at startup → decide synchronously so the first spotlight is on
   // screen the instant Home mounts, with no flash of the bare feed.

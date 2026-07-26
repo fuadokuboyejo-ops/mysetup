@@ -5,6 +5,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import RevampNodeIcon from '../components/RevampNodeIcon';
 import SetupPostScreen from './SetupPostScreen';
 import CreatorProfileScreen from './CreatorProfileScreen';
 import BoardPreview from '../components/BoardPreview';
@@ -261,7 +262,7 @@ function creatorFromPost(post) {
   };
 }
 
-export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearch }) {
+export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearch, onOpenSettings }) {
   const [activeTab, setActiveTab] = useState('Trending');
   const [openedPost, setOpenedPost] = useState(null);
   const [viewedCreator, setViewedCreator] = useState(null);
@@ -338,8 +339,8 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
             <TouchableOpacity style={styles.headerIcon} onPress={onSearch}>
               <Text style={styles.headerIconText}>⌕</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIcon}>
-              <Text style={styles.headerIconText}>♔</Text>
+            <TouchableOpacity style={styles.headerIcon} onPress={onOpenSettings}>
+              <Text style={styles.headerIconText}>⚙</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -428,7 +429,7 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
           <Text style={styles.navScanIcon}>⊕</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={onRevamp}>
-          <Text style={styles.navIcon}>✨</Text>
+          <RevampNodeIcon size={22} color={C.sub} />
           <Text style={styles.navLabel}>Revamp</Text>
         </TouchableOpacity>
         <TouchableOpacity

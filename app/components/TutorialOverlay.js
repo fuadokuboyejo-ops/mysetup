@@ -8,6 +8,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import Svg, { Mask, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LoadingScreen from './LoadingScreen';
+import RevampNodeIcon from './RevampNodeIcon';
 import { EMO_POSES } from '../config/tutorial';
 
 // Opaque cover shown while a step's target is still being measured — hides the
@@ -295,9 +296,14 @@ function TutorialBottomNav({ width, height, top, targetRect, onAdd, background =
           <View key={index} style={styles.introNavItem}>
             {item && (
               <>
-                <Text style={[styles.introNavIcon, item[2] && styles.introNavActive, index === 3 && styles.introNavRevamp]}>
-                  {item[0]}
-                </Text>
+                {index === 3 ? (
+                  // Revamp — the same node-hub glyph the real Home nav uses.
+                  <RevampNodeIcon size={20} color="#8A8792" />
+                ) : (
+                  <Text style={[styles.introNavIcon, item[2] && styles.introNavActive]}>
+                    {item[0]}
+                  </Text>
+                )}
                 <Text style={[styles.introNavLabel, item[2] && styles.introNavActive]}>{item[1]}</Text>
               </>
             )}

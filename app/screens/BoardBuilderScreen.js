@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  PanResponder, Animated, Keyboard,
+  PanResponder, Animated, Keyboard, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { updateSetupLayout } from '../config/setup';
 import {
-  COLS, MAX_ROWS, GAP, ROW_UNIT,
-  shapeSpan, nodeSpan, spanOf, computeLayout, normalizeNodes,
+  COLS, MAX_ROWS, MAX_BOARD_ROWS, GAP, ROW_UNIT,
+  shapeSpan, nodeSpan, spanOf, computeLayout, normalizeNodes, compactRows, boardRowCount,
 } from '../config/boardLayout';
 
 const C = {
@@ -78,22 +78,21 @@ function resolvePlacement(prefCol, prefRow, span, otherNodes) {
   return best ?? { col, row: maxRow };
 }
 
-// When row 0 is occupied, shift every other slot down so a new one can sit on top.
+// A drop in the top zone ALWAYS lands on a fresh row above everything, at the
+// chosen column — even when there's a gap in the current top row. This lets a
+// user place a slot on top anywhere, not just directly above an existing slot.
+// Existing slots shift down by however many rows are needed to clear the new
+// slot's height at the top.
 function resolveTopInsert(prefCol, span, otherNodes) {
   const { cw, rh } = spanOf(span);
   const col = Math.max(0, Math.min(COLS - cw, prefCol));
-  const occ = buildOccupancy(otherNodes);
-  if (cellFits(col, 0, cw, rh, occ)) return { col, row: 0, shiftRows: 0 };
+  if (!otherNodes.length) return { col, row: 0, shiftRows: 0 };
 
-  for (let shift = 1; shift <= 12; shift++) {
-    const shiftedOcc = buildOccupancy(
-      otherNodes.map(n => ({ ...n, row: (n.row ?? 0) + shift })),
-    );
-    if (cellFits(col, 0, cw, rh, shiftedOcc)) {
-      return { col, row: 0, shiftRows: shift };
-    }
-  }
-  return { col, row: 0, shiftRows: 1 };
+  let minRow = Infinity;
+  for (const n of otherNodes) minRow = Math.min(minRow, n.row ?? 0);
+  // Rows the existing slots must drop so the top `rh` rows are free.
+  const shiftRows = Math.max(0, rh - (Number.isFinite(minRow) ? minRow : 0));
+  return { col, row: 0, shiftRows };
 }
 
 function isTopInsertZone(relY) {
@@ -125,7 +124,7 @@ const SHAPE_PRESETS = [
 ];
 
 export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
-  const [nodes, setNodes] = useState(() => normalizeNodes(setup?.boardLayout, setup?.type));
+  const [nodes, setNodes] = useState(() => compactRows(normalizeNodes(setup?.boardLayout, setup?.type)));
   const [boardW, setBoardW] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [drag, setDrag] = useState(null);
@@ -332,22 +331,30 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
             if (!A) return prev;
             const B = swapId ? prev.find(n => n.id === swapId) : null;
 
+            let next;
             if (B) {
               const others = prev.filter(n => n.id !== sourceId && n.id !== swapId);
               const aCell = resolvePlacement(B.col ?? 0, B.row ?? 0, A, others);
               const bCell = resolvePlacement(srcCol, srcRow, B, [...others, { ...A, ...aCell }]);
-              return prev.map(n => {
+              next = prev.map(n => {
                 if (n.id === sourceId) return { ...n, ...aCell };
                 if (n.id === swapId) return { ...n, ...bCell };
                 return n;
               });
+            } else {
+              next = prev.map(n => {
+                if (n.id === sourceId) return { ...n, col: targetCol, row: targetRow };
+                if (shiftRows > 0) return { ...n, row: (n.row ?? 0) + shiftRows };
+                return n;
+              });
             }
-
-            return prev.map(n => {
-              if (n.id === sourceId) return { ...n, col: targetCol, row: targetRow };
-              if (shiftRows > 0) return { ...n, row: (n.row ?? 0) + shiftRows };
-              return n;
-            });
+            // Pull slots up so moving a slot away from row 0 (e.g. one that was
+            // pushed down for a top-insert) never leaves a blank band on top.
+            const compacted = compactRows(next);
+            // A top-insert move can push the bottom slot past the cap — keep the
+            // board within its overall height limit rather than growing past it.
+            if (boardRowCount(compacted) > MAX_BOARD_ROWS) return prev;
+            return compacted;
           });
           setSelectedId(sourceId);
           dragDataRef.current = null;
@@ -382,9 +389,12 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
       if (cols === cw && rows === rh) return prev;
       const others = prev.filter(n => n.id !== id);
       const cell = resolvePlacement(node.col ?? 0, node.row ?? 0, { cols, rows }, others);
-      return prev.map(n => n.id === id
+      const next = prev.map(n => n.id === id
         ? { ...n, cols, rows, shape: 'custom', col: cell.col, row: cell.row }
         : n);
+      // Don't let a resize push the board past its overall height cap.
+      if (boardRowCount(next) > MAX_BOARD_ROWS) return prev;
+      return next;
     });
   };
 
@@ -444,19 +454,30 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
   };
 
   const removeNode = (id) => {
-    setNodes(prev => prev.filter(n => n.id !== id));
+    setNodes(prev => compactRows(prev.filter(n => n.id !== id)));
     setSelectedId(null);
   };
 
   const placeNewNode = (shapeKey, col, row, shiftRows = 0) => {
     const { cw, rh } = shapeSpan(shapeKey);
+    const current = nodesRef.current;
+    const shifted = shiftRows > 0
+      ? current.map(n => ({ ...n, row: (n.row ?? 0) + shiftRows }))
+      : current;
     const id = 'slot_' + Date.now();
-    setNodes(prev => {
-      const shifted = shiftRows > 0
-        ? prev.map(n => ({ ...n, row: (n.row ?? 0) + shiftRows }))
-        : prev;
-      return [...shifted, { id, label: '', shape: shapeKey, cols: cw, rows: rh, col, row }];
-    });
+    const next = [...shifted, { id, label: '', shape: shapeKey, cols: cw, rows: rh, col, row }];
+
+    // Cap the overall board height. Reject the add (rather than grow past the
+    // limit) and tell the user how to make room.
+    if (boardRowCount(next) > MAX_BOARD_ROWS) {
+      Alert.alert(
+        'Board is full',
+        `A board can be up to ${MAX_BOARD_ROWS} rows tall. Remove or resize a slot to make room.`,
+      );
+      return;
+    }
+
+    setNodes(next);
     pendingNameFocusRef.current = true;
     setSelectedId(id);
     setShowAddPicker(false);
@@ -730,6 +751,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
                   onPress={() => {
                     nameInputRef.current?.blur();
                     Keyboard.dismiss();
+                    setSelectedId(null); // close the panel too
                   }}
                   activeOpacity={0.8}
                 >
