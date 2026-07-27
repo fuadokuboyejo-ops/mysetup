@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  PanResponder, Animated, Keyboard, Alert,
+  PanResponder, Animated, Easing, Keyboard, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { updateSetupLayout } from '../config/setup';
@@ -127,6 +127,9 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
   const [nodes, setNodes] = useState(() => compactRows(normalizeNodes(setup?.boardLayout, setup?.type)));
   const [boardW, setBoardW] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
+  const [resizingId, setResizingId] = useState(null);
+  const [poofing, setPoofing] = useState([]); // node ids animating out (delete poof)
+  const [puffs, setPuffs] = useState([]);     // transient dust particles
   const [drag, setDrag] = useState(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
   const [addDrag, setAddDrag] = useState(null);
@@ -145,6 +148,48 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
   const touchCancelledRef = useRef(false);
   const pressedIdRef = useRef(null);
   const ghostPos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  // "Lift to grab" — springs 0→1 when a piece is picked up, driving the ghost's
+  // scale + tilt so it feels lifted off the board. Shared by both ghosts.
+  const ghostLift = useRef(new Animated.Value(0)).current;
+  const liftGhost = () => {
+    ghostLift.setValue(0);
+    Animated.spring(ghostLift, { toValue: 1, friction: 6, tension: 140, useNativeDriver: false }).start();
+  };
+  const ghostLiftStyle = {
+    transform: [
+      { scale: ghostLift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
+      { rotate: ghostLift.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-2deg'] }) },
+    ],
+  };
+
+  // Per-node scale for the "squish & pop" tap feedback (and the springy drop).
+  const nodeScales = useRef({}).current;
+  const getNodeScale = (id) => {
+    if (!nodeScales[id]) nodeScales[id] = new Animated.Value(1);
+    return nodeScales[id];
+  };
+  const popNode = (id) => {
+    const v = getNodeScale(id);
+    Animated.sequence([
+      Animated.timing(v, { toValue: 0.9, duration: 90, useNativeDriver: true }),
+      Animated.spring(v, { toValue: 1, friction: 3.5, tension: 170, useNativeDriver: true }),
+    ]).start();
+  };
+  // Elastic-jelly wobble on resize release. Progress 0→1; rest value 1 = identity,
+  // so scaleX/scaleY both read 1 when it isn't playing.
+  const nodeJelly = useRef({}).current;
+  const getNodeJelly = (id) => {
+    if (!nodeJelly[id]) nodeJelly[id] = new Animated.Value(1);
+    return nodeJelly[id];
+  };
+  const jellyNode = (id) => {
+    const v = getNodeJelly(id);
+    v.setValue(0);
+    Animated.timing(v, { toValue: 1, duration: 560, easing: Easing.linear, useNativeDriver: true }).start();
+  };
+  // Delete "poof": per-node progress 0→1 driving shrink + spin + fade.
+  const poofVals = useRef({}).current;
+  const puffKey = useRef(0);
   const addDragRef = useRef(null);
   const addGhostPos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const addDragPRs = useRef({});
@@ -269,6 +314,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
               y: touchStartRef.current.y - r.h / 2,
             });
             setDrag(d);
+            liftGhost(); // piece lifts off the board as it's grabbed
           }, HOLD_MS);
         });
       },
@@ -357,12 +403,13 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
             return compacted;
           });
           setSelectedId(sourceId);
+          popNode(sourceId); // springy settle when the piece snaps into place
           dragDataRef.current = null;
           setDrag(null);
           dragActiveRef.current = false;
         } else if (!touchCancelledRef.current) {
           const id = pressedIdRef.current;
-          if (id) setSelectedId(prev => prev === id ? null : id);
+          if (id) { setSelectedId(prev => prev === id ? null : id); popNode(id); }
           else setSelectedId(null);
         }
         pressedIdRef.current = null;
@@ -416,6 +463,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
           touchCancelledRef.current = true;
           resizingIdRef.current = nodeId;
           setSelectedId(nodeId);
+          setResizingId(nodeId); // lift + brighten the node while it's resized
           const node = nodesRef.current.find(n => n.id === nodeId);
           const bW = boardWRef.current;
           const { colW } = computeLayout(nodesRef.current, bW);
@@ -443,19 +491,56 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
         onPanResponderRelease: () => {
           resizeStartRef.current = null;
           resizingIdRef.current = null;
+          setResizingId(null);
+          jellyNode(nodeId); // elastic-jelly wobble once the new size snaps in
         },
         onPanResponderTerminate: () => {
           resizeStartRef.current = null;
           resizingIdRef.current = null;
+          setResizingId(null);
         },
       });
     }
     return resizePRs.current[nodeId];
   };
 
+  // Scatter a few dust particles from a point (board-relative coords).
+  const spawnPuffs = (cx, cy) => {
+    const batch = [];
+    for (let k = 0; k < 8; k++) {
+      const ang = (Math.PI * 2 / 8) * k + Math.random() * 0.5;
+      const dist = 26 + Math.random() * 22;
+      const size = 6 + Math.random() * 8;
+      batch.push({
+        id: puffKey.current++,
+        x: cx - size / 2, y: cy - size / 2, size,
+        dx: Math.cos(ang) * dist, dy: Math.sin(ang) * dist,
+        val: new Animated.Value(0),
+      });
+    }
+    setPuffs(prev => [...prev, ...batch]);
+    batch.forEach(p =>
+      Animated.timing(p.val, { toValue: 1, duration: 480, easing: Easing.out(Easing.quad), useNativeDriver: true }).start());
+    const ids = new Set(batch.map(p => p.id));
+    setTimeout(() => setPuffs(prev => prev.filter(p => !ids.has(p.id))), 520);
+  };
+
   const removeNode = (id) => {
-    setNodes(prev => compactRows(prev.filter(n => n.id !== id)));
+    if (poofVals[id]) return; // already poofing
+    // Puff from the node's center before it shrinks away.
+    const bW = boardWRef.current;
+    const r = bW ? computeLayout(nodesRef.current, bW).rects[id] : null;
+    if (r) spawnPuffs(r.x + r.w / 2, r.y + r.h / 2);
+
+    const v = new Animated.Value(0);
+    poofVals[id] = v;
     setSelectedId(null);
+    setPoofing(prev => [...prev, id]);
+    Animated.timing(v, { toValue: 1, duration: 380, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => {
+      delete poofVals[id];
+      setPoofing(prev => prev.filter(x => x !== id));
+      setNodes(prev => compactRows(prev.filter(n => n.id !== id)));
+    });
   };
 
   const placeNewNode = (shapeKey, col, row, shiftRows = 0) => {
@@ -513,6 +598,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
             y: e.nativeEvent.pageY - ghostH / 2,
           });
           setAddDrag(d);
+          liftGhost(); // new piece lifts as you start dragging it in
         },
         onPanResponderMove: (e) => {
           const d = addDragRef.current;
@@ -647,15 +733,35 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
             };
           }
           const isSel = node.id === selectedId;
+          const isResizing = node.id === resizingId;
+          const pv = poofVals[node.id];
+          const isPoofing = !!pv;
           const span = nodeSpan(node);
           const labelVertical = span.rh > span.cw;
           return (
-            <View
+            <Animated.View
               key={node.id}
+              pointerEvents={isPoofing ? 'none' : 'auto'}
               style={[
                 S.node,
-                { position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h },
+                {
+                  position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
+                  transform: isPoofing
+                    ? [
+                        { scale: pv.interpolate({ inputRange: [0, 0.3, 1], outputRange: [1, 1.12, 0] }) },
+                        { rotate: pv.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '12deg'] }) },
+                      ]
+                    : [
+                        { scale: getNodeScale(node.id) },
+                        { scaleX: getNodeJelly(node.id).interpolate({ inputRange: [0, 0.3, 0.5, 0.7, 1], outputRange: [1.06, 0.96, 1.03, 0.99, 1] }) },
+                        { scaleY: getNodeJelly(node.id).interpolate({ inputRange: [0, 0.3, 0.5, 0.7, 1], outputRange: [0.94, 1.05, 0.98, 1.01, 1] }) },
+                      ],
+                  opacity: isPoofing
+                    ? pv.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1, 1, 0] })
+                    : 1,
+                },
                 isSel && S.nodeSelected,
+                isResizing && S.nodeResizing,
               ]}
             >
               <View style={S.nodeContent} pointerEvents="none">
@@ -686,9 +792,26 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
                   />
                 </>
               )}
-            </View>
+            </Animated.View>
           );
         })}
+
+        {/* Dust particles for the delete poof */}
+        {puffs.map(p => (
+          <Animated.View
+            key={p.id}
+            pointerEvents="none"
+            style={[S.puff, {
+              left: p.x, top: p.y, width: p.size, height: p.size, borderRadius: p.size / 2,
+              opacity: p.val.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+              transform: [
+                { translateX: p.val.interpolate({ inputRange: [0, 1], outputRange: [0, p.dx] }) },
+                { translateY: p.val.interpolate({ inputRange: [0, 1], outputRange: [0, p.dy] }) },
+                { scale: p.val.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.1] }) },
+              ],
+            }]}
+          />
+        ))}
       </View>
 
       <TouchableOpacity
@@ -826,7 +949,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
         style={[S.ghost, {
           width: drag.ghostW,
           height: drag.ghostH,
-          transform: ghostPos.getTranslateTransform(),
+          transform: [...ghostPos.getTranslateTransform(), ...ghostLiftStyle.transform],
         }]}
       >
         <Text style={S.ghostLabel}>{drag.label}</Text>
@@ -838,7 +961,7 @@ export default function BoardBuilderScreen({ setup, onDone, onCancel }) {
         style={[S.ghost, {
           width: addDrag.ghostW,
           height: addDrag.ghostH,
-          transform: addGhostPos.getTranslateTransform(),
+          transform: [...addGhostPos.getTranslateTransform(), ...ghostLiftStyle.transform],
         }]}
       >
         <Text style={S.ghostLabel}>{addDrag.label}</Text>
@@ -900,6 +1023,14 @@ const S = StyleSheet.create({
     backgroundColor: C.selBg,
     shadowOpacity: 0,
     elevation: 0,
+  },
+  puff: { position: 'absolute', backgroundColor: 'rgba(140,140,150,0.5)', zIndex: 3 },
+  nodeResizing: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 16,
   },
   nodeContent: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   nodePlus: { color: C.sub, fontSize: 18, fontWeight: '300', lineHeight: 20 },
@@ -965,12 +1096,12 @@ const S = StyleSheet.create({
     borderColor: C.selBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.88,
+    opacity: 0.96,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    elevation: 18,
   },
   ghostLabel: { color: C.text, fontSize: 12, fontWeight: '600' },
 

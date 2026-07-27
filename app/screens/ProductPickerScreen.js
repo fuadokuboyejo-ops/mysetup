@@ -431,6 +431,7 @@ const styles = StyleSheet.create({
   galleryImage: { width: '72%', height: '58%' },
   galleryLabel: { color: '#161616', fontSize: 12, fontWeight: '700' },
 
+
   list: { gap: 12 },
 
   // Hard (unblurred) drop shadow — a solid offset shape behind the card,

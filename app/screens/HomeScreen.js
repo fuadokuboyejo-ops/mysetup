@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Modal,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Modal, Animated, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path, Circle } from 'react-native-svg';
 import RevampNodeIcon from '../components/RevampNodeIcon';
 import SetupPostScreen from './SetupPostScreen';
 import CreatorProfileScreen from './CreatorProfileScreen';
@@ -13,8 +15,45 @@ import TutorialOverlay, { useTutorialTarget } from '../components/TutorialOverla
 import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial } from '../config/tutorial';
 import { getPosts, getSetups, getAllItems } from '../config/setup';
 import { getProfileMedia } from '../config/profile';
+import { isPostLiked, toggleLikedPost } from '../config/collections';
 import { supabase } from '../config/supabase';
 import { imageUri } from '../config/media';
+
+const PULL_REFRESH_VIDEO = require('../assets/pull_refresh.mp4');
+const PULL_THRESHOLD = 70; // pull past this (px) to trigger a refresh
+const PULL_REST = 84;      // how far the feed holds down while refreshing (iOS)
+
+// Header icons as SVG so they render identically on iOS (the ⚙/⌕ text glyphs
+// show up as colorful emoji on iOS).
+function SearchIcon({ color }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8}>
+      <Circle cx={11} cy={11} r={7} />
+      <Path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+    </Svg>
+  );
+}
+function HeartIcon({ filled, color, size = 17 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth={1.7}>
+      <Path
+        d="M12 20s-7-4.3-9.3-8.4C1.2 8.9 2.6 6 5.5 6c1.9 0 3 .9 3.8 2 .3.4.5.7.7.7s.4-.3.7-.7c.8-1.1 1.9-2 3.8-2 2.9 0 4.3 2.9 2.8 5.6C19 15.7 12 20 12 20z"
+        strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+function GearIcon({ color }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.6}>
+      <Circle cx={12} cy={12} r={3.2} />
+      <Path
+        d="M19.4 13a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 // `gradient` stands in for each user's real setup photo until posts carry an
 // actual photo_path — same warm dusk-toned look as the reference mockup.
@@ -129,7 +168,8 @@ const MOCK_CREATORS = {
   },
 };
 
-const TABS = ['Trending', 'Following', 'New'];
+// 'Following' is deferred until social follow is built (see FUTURE_UPDATES.md).
+const TABS = ['Trending', 'New'];
 
 function Avatar({ initials, uri }) {
   if (uri) {
@@ -168,9 +208,37 @@ export function MiniBoard({ slots }) {
   );
 }
 
+const LIKE_RED = '#E0245E';
+
 function SetupCard({ setup, onPress, avatarUri }) {
+  const [liked, setLiked] = useState(false);
+  // Reflect whether this post is already in the user's collection.
+  useEffect(() => {
+    let active = true;
+    isPostLiked(setup.id).then(v => { if (active) setLiked(v); });
+    return () => { active = false; };
+  }, [setup.id]);
+  const toggleLike = async () => {
+    const next = await toggleLikedPost(setup);
+    setLiked(next);
+  };
+  const displayLikes = (setup.likes || 0) + (liked ? 1 : 0);
+
+  // Press and hold to like (adds to the collection; won't unlike).
+  const holdToLike = async () => {
+    if (liked) return;
+    const next = await toggleLikedPost(setup);
+    setLiked(next);
+  };
+
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      onLongPress={holdToLike}
+      delayLongPress={230}
+      activeOpacity={0.9}
+    >
       {/* User row */}
       <View style={styles.cardHeader}>
         <Avatar initials={setup.initials} uri={avatarUri} />
@@ -207,14 +275,19 @@ function SetupCard({ setup, onPress, avatarUri }) {
       {/* Stats row */}
       <View style={styles.cardFooter}>
         <View style={styles.footerLeft}>
-          <TouchableOpacity style={styles.statItem}>
-            <Text style={styles.statIcon}>♡</Text>
-            <Text style={styles.statText}>{setup.likes}</Text>
+          <TouchableOpacity
+            style={styles.statItem}
+            onPress={(e) => { e.stopPropagation?.(); toggleLike(); }}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <HeartIcon filled={liked} color={liked ? LIKE_RED : C.sub} />
+            <Text style={[styles.statText, liked && { color: LIKE_RED }]}>{displayLikes}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.statItem}>
+          <View style={styles.statItem}>
             <Text style={styles.statIcon}>⌁</Text>
             <Text style={styles.statText}>{setup.comments}</Text>
-          </TouchableOpacity>
+          </View>
         </View>
         {setup.trending && (
           <View style={styles.trendingBadge}>
@@ -305,27 +378,52 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
   // Load published posts and hydrate each with its Supabase-backed setup media.
   // HomeScreen remounts whenever you navigate back, so newly posted setups show
   // up as soon as the user returns to the feed.
-  useEffect(() => {
-    (async () => {
-      const [posts, setups, allItems] = await Promise.all([getPosts(), getSetups(), getAllItems()]);
-      const hydrated = posts.map(p => {
-        const setup = setups.find(s => s.id === p.setupId) || p.boardSetup;
-        return {
-          ...p,
-          photo: setup?.photo || p.photo,
-          // Live tags from the setup (not the post-time snapshot) so re-tagging
-          // the setup updates the post too, and both views stay in sync.
-          dots: setup?.dots ?? p.dots,
-          extraPhotos: setup?.extraPhotos ?? p.extraPhotos ?? [],
-          // The real arranged board + the gear library, so the feed card can
-          // render the actual board the user posted (not the placeholder grid).
-          boardSetup: setup,
-          boardItems: p.boardItems?.length ? p.boardItems : allItems,
-        };
-      });
-      setUserPosts(hydrated);
-    })();
+  const loadFeed = useCallback(async () => {
+    const [posts, setups, allItems] = await Promise.all([getPosts(), getSetups(), getAllItems()]);
+    const hydrated = posts.map(p => {
+      const setup = setups.find(s => s.id === p.setupId) || p.boardSetup;
+      return {
+        ...p,
+        photo: setup?.photo || p.photo,
+        dots: setup?.dots ?? p.dots,
+        extraPhotos: setup?.extraPhotos ?? p.extraPhotos ?? [],
+        boardSetup: setup,
+        boardItems: p.boardItems?.length ? p.boardItems : allItems,
+      };
+    });
+    setUserPosts(hydrated);
   }, []);
+  useEffect(() => { loadFeed(); }, [loadFeed]);
+
+  // ── Pull-to-refresh with a custom MP4 refresher ──────────────────────────────
+  const scrollRef = useRef(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+  const refreshPlayer = useVideoPlayer(PULL_REFRESH_VIDEO, (p) => {
+    p.loop = true; p.muted = true; p.play();
+  });
+
+  const triggerRefresh = async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    // Hold the feed down so the refresher stays visible while we reload (iOS).
+    if (Platform.OS === 'ios') scrollRef.current?.scrollTo?.({ y: -PULL_REST, animated: true });
+    const started = Date.now();
+    try { await loadFeed(); } catch { /* keep the current feed */ }
+    // Keep the refresher up long enough to read (~1s) even if the fetch is fast.
+    const wait = Math.max(0, 1000 - (Date.now() - started));
+    setTimeout(() => {
+      refreshingRef.current = false;
+      setRefreshing(false);
+      scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+    }, wait);
+  };
+
+  // Refresher reveal driven by how far the feed is pulled (iOS overscroll = -y).
+  const refresherOpacity = scrollY.interpolate({ inputRange: [-PULL_THRESHOLD, -12], outputRange: [1, 0], extrapolate: 'clamp' });
+  const refresherScale = scrollY.interpolate({ inputRange: [-PULL_THRESHOLD, -20], outputRange: [1, 0.45], extrapolate: 'clamp' });
 
   return (
     <View style={styles.container}>
@@ -337,10 +435,10 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
           <Text style={styles.logo}>my setup</Text>
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.headerIcon} onPress={onSearch}>
-              <Text style={styles.headerIconText}>⌕</Text>
+              <SearchIcon color={C.sub} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerIcon} onPress={onOpenSettings}>
-              <Text style={styles.headerIconText}>⚙</Text>
+              <GearIcon color={C.sub} />
             </TouchableOpacity>
           </View>
         </View>
@@ -361,27 +459,52 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
           ))}
         </View>
 
-        {/* Feed */}
-        <ScrollView
+        {/* Feed with custom pull-to-refresh */}
+        <View style={styles.feedWrap}>
+          {/* Refresher sits behind the (transparent) scroll view; revealed as
+              the feed is pulled down / held while refreshing. */}
+          <Animated.View
+            style={[styles.refresher, { opacity: refreshing ? 1 : refresherOpacity, transform: [{ scale: refreshing ? 1 : refresherScale }] }]}
+            pointerEvents="none"
+          >
+            <VideoView
+              player={refreshPlayer}
+              style={styles.refresherVideo}
+              contentFit="contain"
+              nativeControls={false}
+              pointerEvents="none"
+            />
+          </Animated.View>
+
+        <Animated.ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.feed}
+          style={styles.feedScroll}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+          onScrollEndDrag={(e) => { if (e.nativeEvent.contentOffset.y <= -PULL_THRESHOLD) triggerRefresh(); }}
+          contentInset={Platform.OS === 'ios' ? { top: refreshing ? PULL_REST : 0 } : undefined}
         >
-          {userPosts.length === 0 ? (
-            <View style={styles.feedEmpty}>
-              <Text style={styles.feedEmptyTitle}>No posts yet</Text>
-              <Text style={styles.feedEmptyHint}>Setups people post will show up here.</Text>
-            </View>
-          ) : (
-            userPosts.map(setup => (
-              <SetupCard
-                key={setup.id}
-                setup={setup}
-                avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
-                onPress={() => setOpenedPost(setup)}
-              />
-            ))
-          )}
-        </ScrollView>
+          {/* The user's real posts first, then the sample/template setups so the
+              feed always has content to explore. */}
+          {userPosts.map(setup => (
+            <SetupCard
+              key={setup.id}
+              setup={setup}
+              avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
+              onPress={() => setOpenedPost(setup)}
+            />
+          ))}
+          {MOCK_SETUPS.map(setup => (
+            <SetupCard
+              key={`template-${setup.id}`}
+              setup={setup}
+              onPress={() => setOpenedPost(setup)}
+            />
+          ))}
+        </Animated.ScrollView>
+        </View>
 
       </SafeAreaView>
 
@@ -528,6 +651,13 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   feed: { paddingHorizontal: 14, gap: 12, paddingBottom: 100 },
+  feedWrap: { flex: 1, backgroundColor: C.bg, position: 'relative' },
+  feedScroll: { flex: 1, backgroundColor: 'transparent' },
+  refresher: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: PULL_REST,
+    alignItems: 'center', justifyContent: 'center', zIndex: 0,
+  },
+  refresherVideo: { width: 66, height: 66 },
   feedEmpty: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 6 },
   feedEmptyTitle: { color: '#161616', fontSize: 16, fontWeight: '700' },
   feedEmptyHint: { color: '#6E6E73', fontSize: 14, textAlign: 'center' },

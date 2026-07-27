@@ -7,10 +7,11 @@ import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 // Yours is "MySetup Pro" (with the space + capitals).
 export const ENTITLEMENT_ID = 'MySetup Pro';
 
-// Public SDK key from RevenueCat → Project Settings → API Keys.
-// NOTE: this "test_" key looks like a Test Store key rather than the platform
-// (appl_/goog_) SDK keys a shipping build needs — fine for testing now.
-const API_KEY = 'test_MvKmRkXIvbWRMzIxyWbueuHADNH';
+// Public SDK key from RevenueCat → API keys → SDK API keys (App Store / Apple).
+// This is the iOS platform key (appl_...) a shipping App Store / TestFlight build
+// needs. It's a publishable client key — safe to embed. If Android ships later,
+// switch to Platform.select({ ios: 'appl_...', android: 'goog_...' }).
+const API_KEY = 'appl_YbciCqQzZTjGlFFXnBqQeYrprGk';
 
 // Configure RevenueCat and report whether we actually connected. Guarded so a
 // dev build without the native module just warns instead of crashing startup.
@@ -22,6 +23,13 @@ export async function initPurchases() {
     // message instead of a cryptic "of null".
     if (!NativeModules.RNPurchases) {
       console.warn('[purchases] native module NOT in this build — run `npx expo run:android` (a JS-only reload won\'t include it)');
+      return null;
+    }
+    // Safety net: a Test Store key ("test_...") can hard-crash a real App
+    // Store / TestFlight build when the SDK talks to StoreKit. Never configure
+    // with one outside dev — skip purchases entirely so the app still opens.
+    if (!__DEV__ && (!API_KEY || API_KEY.startsWith('test_'))) {
+      console.warn('[purchases] skipping init — a production build needs a platform key (appl_/goog_), not a test_ key');
       return null;
     }
     if (__DEV__ && Purchases.setLogLevel) await Purchases.setLogLevel(LOG_LEVEL.DEBUG);

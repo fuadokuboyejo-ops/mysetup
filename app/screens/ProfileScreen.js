@@ -11,8 +11,11 @@ import { computeLayout, normalizeNodes, nodeSpan } from '../config/boardLayout';
 import { supabase } from '../config/supabase';
 import { getProfileMedia, saveProfileImage } from '../config/profile';
 import { imageUri } from '../config/media';
+import { LinearGradient } from 'expo-linear-gradient';
 import StitchBorder from '../components/StitchBorder';
 import ProductDetailScreen from './ProductDetailScreen';
+import SetupPostScreen from './SetupPostScreen';
+import { getLikedPosts } from '../config/collections';
 import TutorialOverlay, { useTutorialTarget } from '../components/TutorialOverlay';
 import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, jumpTutorial, skipTutorial } from '../config/tutorial';
 
@@ -118,6 +121,8 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('Items');
   const [openedItem, setOpenedItem] = useState(null);
+  const [collection, setCollection] = useState([]);
+  const [openedCollectionPost, setOpenedCollectionPost] = useState(null);
   const [setups, setSetups] = useState([]);
   const [allItems, setAllItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +132,11 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
   const [newType, setNewType] = useState('');
   const [creating, setCreating] = useState(false);
   const [authUser, setAuthUser] = useState(null);
+
+  // Refresh the liked-posts collection whenever the Collections tab is opened.
+  useEffect(() => {
+    if (activeTab === 'Collections') getLikedPosts().then(setCollection);
+  }, [activeTab]);
   const [profileMedia, setProfileMedia] = useState({});
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [savingProfileImage, setSavingProfileImage] = useState(null);
@@ -406,11 +416,38 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
           </ScrollView>
         )
       ) : activeTab === 'Collections' ? (
-        /* Collections — grouped gear (feature not built yet) */
-        <View style={S.empty}>
-          <Text style={S.emptyText}>No collections yet</Text>
-          <Text style={S.emptyHint}>Group your gear into collections — coming soon.</Text>
-        </View>
+        /* Collections — setups the user has liked */
+        collection.length === 0 ? (
+          <View style={S.empty}>
+            <Text style={S.emptyText}>No collections yet</Text>
+            <Text style={S.emptyHint}>Like a setup in the feed and it'll be saved here.</Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={S.grid} showsVerticalScrollIndicator={false}>
+            {collection.map(post => (
+              <View key={post.id} style={S.setupCardWrap}>
+                <View style={S.setupCardHardShadow} />
+                <View style={S.setupCard}>
+                  <TouchableOpacity onPress={() => setOpenedCollectionPost(post)} activeOpacity={0.85}>
+                    <View style={S.collPhoto}>
+                      {post.photo ? (
+                        <Image source={{ uri: imageUri(post.photo) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : (
+                        <LinearGradient colors={post.gradient || ['#3A4152', '#5E6B72']} style={StyleSheet.absoluteFill} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                  <View style={S.setupFooter}>
+                    <TouchableOpacity style={S.setupFooterMain} onPress={() => setOpenedCollectionPost(post)} activeOpacity={0.8}>
+                      <Text style={S.setupName} numberOfLines={1}>{post.title || `${post.username}'s setup`}</Text>
+                      <Text style={S.setupCount}>@{post.username}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )
       ) : (
         /* Setups — the user's saved setups */
         <ScrollView contentContainerStyle={S.grid} showsVerticalScrollIndicator={false}>
@@ -484,6 +521,23 @@ export default function ProfileScreen({ onOpenSetup, onBuildSetup, onBack, onSet
                 setOpenedItem(null);
                 if (setup) onOpenSetup(setup);
               }}
+            />
+          )}
+        </SafeAreaProvider>
+      </Modal>
+
+      {/* Collection post detail */}
+      <Modal
+        visible={!!openedCollectionPost}
+        animationType="slide"
+        onRequestClose={() => setOpenedCollectionPost(null)}
+      >
+        <SafeAreaProvider>
+          {openedCollectionPost && (
+            <SetupPostScreen
+              post={openedCollectionPost}
+              onBack={() => { setOpenedCollectionPost(null); getLikedPosts().then(setCollection); }}
+              onOpenCreator={() => {}}
             />
           )}
         </SafeAreaProvider>
@@ -765,6 +819,7 @@ const S = StyleSheet.create({
     borderRadius: 16,
   },
   setupCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1.5, borderColor: '#161616', overflow: 'hidden' },
+  collPhoto: { height: 170, backgroundColor: '#EDEDED' },
 
   // Absolute-positioned grid (gap baked into coordinates via computeLayout), so
   // no padding/gap here — matches the builder + setup Board tab exactly.

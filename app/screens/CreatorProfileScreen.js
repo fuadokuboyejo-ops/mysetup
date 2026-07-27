@@ -58,19 +58,9 @@ export default function CreatorProfileScreen({ creator, onBack, onOpenSetup }) {
         <View style={S.bannerBody}>
           <Text style={S.bannerName}>{creator.username}</Text>
           <View style={S.bannerStats}>
-            <Text style={S.bannerStat}><Text style={S.bannerStatNum}>{creator.setupsCount}</Text> setups</Text>
-            <Text style={S.bannerDot}>·</Text>
-            <Text style={S.bannerStat}><Text style={S.bannerStatNum}>{creator.followers}</Text> followers</Text>
-            <Text style={S.bannerDot}>·</Text>
-            <Text style={S.bannerStat}><Text style={S.bannerStatNum}>{creator.following}</Text> following</Text>
-          </View>
-          <View style={S.bannerBtns}>
-            <TouchableOpacity style={S.bannerBtn} activeOpacity={0.85}>
-              <Text style={S.bannerBtnText}>{locked ? 'Request' : 'Follow'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={S.bannerBtn} activeOpacity={0.85}>
-              <Text style={S.bannerBtnText}>Message</Text>
-            </TouchableOpacity>
+            <Text style={S.bannerStat}>
+              <Text style={S.bannerStatNum}>{creator.setupsCount}</Text> {creator.setupsCount === 1 ? 'setup' : 'setups'}
+            </Text>
           </View>
         </View>
       </View>
@@ -93,7 +83,7 @@ export default function CreatorProfileScreen({ creator, onBack, onOpenSetup }) {
           <View style={S.lockedCard}>
             <Text style={S.lockedIcon}>🔒</Text>
             <Text style={S.lockedTitle}>this profile is private</Text>
-            <Text style={S.lockedSubtitle}>follow to see {creator.username}'s {activeTab.toLowerCase()}</Text>
+            <Text style={S.lockedSubtitle}>{creator.username}'s {activeTab.toLowerCase()} aren't public</Text>
           </View>
         </View>
       ) : activeTab === 'Setups' ? (

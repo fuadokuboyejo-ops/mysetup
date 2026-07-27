@@ -4,6 +4,15 @@ Planned features and improvements for mysetup.
 
 ---
 
+## Social & Following
+
+- **Follow creators** — let users follow each other. Deferred for launch: the "Following" feed tab and all Follow buttons (post detail, creator profile, search results) were removed until this is built end-to-end (needs a `follows` table + RLS, follower/following counts, and follow/unfollow actions)
+- **Following feed** — restore the "Following" tab on Home so it shows posts only from creators the user follows
+- **Private accounts** — once following exists, wire request-to-follow so private profiles (`account_private`) can approve followers; today a private profile is simply locked
+- **Messaging** — direct messages between users (the "Message" button on creator profiles was removed for launch)
+
+---
+
 ## AI Mode
 
 - **Generate a setup from the board** — AI reads what's already on the board (scanned items, slot names, sizes, and positions) and suggests or auto-generates an optimized layout — e.g. dual monitors side by side, tower placement, deskmat sizing

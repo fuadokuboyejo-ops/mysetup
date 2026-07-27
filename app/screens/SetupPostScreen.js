@@ -80,11 +80,8 @@ export default function SetupPostScreen({ post: initialPost, onBack, onOpenCreat
                   <Text style={styles.creatorHandle}>{post.handle}</Text>
                   <Text style={styles.creatorBadge}>✦ creator</Text>
                 </View>
-                <Text style={styles.creatorSub}>{post.setupsCount} setups · {post.followers} followers</Text>
+                <Text style={styles.creatorSub}>{post.setupsCount} {post.setupsCount === 1 ? 'setup' : 'setups'}</Text>
               </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.followBtn} activeOpacity={0.85}>
-              <Text style={styles.followBtnText}>Follow</Text>
             </TouchableOpacity>
           </Animated.View>
 

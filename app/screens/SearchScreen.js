@@ -56,7 +56,7 @@ function buildCreators(posts) {
   return [...creators.values()].map(creator => ({
     ...creator,
     tags: [...creator.tags],
-    meta: `${creator.posts.length} ${creator.posts.length === 1 ? 'setup' : 'setups'} · ${creator.followers} followers`,
+    meta: `${creator.posts.length} ${creator.posts.length === 1 ? 'setup' : 'setups'}`,
   }));
 }
 
@@ -74,7 +74,6 @@ function buildTags(posts) {
 }
 
 function CreatorRow({ creator, onOpen }) {
-  const [following, setFollowing] = useState(false);
   return (
     <TouchableOpacity style={s.creator} onPress={onOpen} activeOpacity={0.85}>
       <View style={s.avatar}><Text style={s.avatarText}>{creator.initials}</Text></View>
@@ -85,13 +84,6 @@ function CreatorRow({ creator, onOpen }) {
         </View>
         <Text style={s.creatorMeta} numberOfLines={1}>{creator.meta}</Text>
       </View>
-      <TouchableOpacity
-        style={[s.followBtn, following && s.followBtnOn]}
-        onPress={event => { event.stopPropagation?.(); setFollowing(value => !value); }}
-        activeOpacity={0.85}
-      >
-        <Text style={[s.followText, following && s.followTextOn]}>{following ? 'Following' : 'Follow'}</Text>
-      </TouchableOpacity>
     </TouchableOpacity>
   );
 }

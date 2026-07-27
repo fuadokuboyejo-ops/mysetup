@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, PanResponder, Modal, SafeAreaView, StatusBar,
+  Animated, Easing,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -15,7 +16,7 @@ import ProductDetailScreen from './ProductDetailScreen';
 import SetupPostScreen from './SetupPostScreen';
 import PulsingDot, { TagPulseHalo } from '../components/PulsingDot';
 import TutorialOverlay, { useTutorialTarget, CheerToast } from '../components/TutorialOverlay';
-import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial } from '../config/tutorial';
+import { TUTORIAL_STEPS, useTutorialStep, advanceTutorial, skipTutorial, isTutorialActive } from '../config/tutorial';
 
 // Where the image actually draws inside a container of size (cw × ch) for a
 // given resize mode, given the image's aspect ratio (w/h). Tags are anchored to
@@ -412,6 +413,17 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   const boardDragRef = useRef(null);
   const slotRectsRef = useRef({});
   const boardPRCache = useRef({});
+  // Arc-drop: a cut-out that flies into its slot when placed from the picker.
+  const [flyer, setFlyer] = useState(null); // { uri, rect }
+  const flyAnim = useRef(new Animated.Value(0)).current;
+  // Board populate: per-slot drop-in values (1 = settled). Cascades once when a
+  // setup's board first appears.
+  const dropVals = useRef({}).current;
+  const getDropVal = (id) => {
+    if (!dropVals[id]) dropVals[id] = new Animated.Value(1);
+    return dropVals[id];
+  };
+  const boardCascadedRef = useRef(false);
 
   // Refs for drag-to-tag
   const dragCardRef = useRef(null);
@@ -474,9 +486,24 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     setBoardSlots(next);
     updateSetupSlots(setup?.id || 'default', next);
   };
+  // Arc a cut-out down into a slot, then commit the placement when it lands.
+  // Falls back to an instant commit if we don't have the slot's measured rect
+  // (or during the tutorial, which has its own celebration).
+  const flyIntoSlot = (nodeId, item, commit) => {
+    const rect = slotRectsRef.current[nodeId];
+    if (rect && item?.photoBase64 && !isTutorialActive()) {
+      setFlyer({ uri: imageUri(item.photoBase64, 'image/png'), rect });
+      flyAnim.setValue(0);
+      Animated.timing(flyAnim, { toValue: 1, duration: 680, easing: Easing.linear, useNativeDriver: true })
+        .start(() => { setFlyer(null); commit(); });
+    } else {
+      commit();
+    }
+  };
   const assignSlot = (nodeId, itemId) => {
-    persistSlots({ ...boardSlots, [nodeId]: itemId });
+    const next = { ...boardSlots, [nodeId]: itemId };
     setPickerNode(null);
+    flyIntoSlot(nodeId, items.find(i => i.id === itemId), () => persistSlots(next));
   };
   const clearSlot = (nodeId) => {
     const next = { ...boardSlots };
@@ -640,6 +667,20 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
   const boardEligibleItems = items.filter(it => it.isCutout !== false);
   const slotRefs = useRef({});
 
+  // Populate cascade: the first time this setup's board appears with gear, the
+  // cut-outs drop into their slots one by one. Plays once per mount.
+  useEffect(() => {
+    if (boardCascadedRef.current || loading || arranging || view !== 'board' || !boardW) return;
+    const nodes = layoutNodes || [];
+    if (!nodes.some(n => slots[n.id])) return; // nothing placed yet — skip
+    boardCascadedRef.current = true;
+    nodes.forEach(n => getDropVal(n.id).setValue(0));
+    Animated.stagger(80, nodes.map(n =>
+      Animated.spring(getDropVal(n.id), { toValue: 1, friction: 6, tension: 120, useNativeDriver: true }),
+    )).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, arranging, view, boardW, boardSlots, items]);
+
   // ── Board item drag-and-drop ────────────────────────────────────────────────
   // Capture each slot's on-screen rect so we can hit-test the drop under a finger.
   const measureSlots = () => {
@@ -660,13 +701,16 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     if (!toNode || fromNode === toNode) return;
     const next = { ...boardSlots };
     if (fromNode) {
+      // Rearranging between slots — commit immediately (no arc).
       const occupant = next[toNode];
       if (occupant) next[fromNode] = occupant; else delete next[fromNode];
       next[toNode] = itemId;
+      persistSlots(next);
     } else {
+      // Adding from the tray — arc the cut-out into the slot, then commit.
       next[toNode] = itemId;
+      flyIntoSlot(toNode, items.find(i => i.id === itemId), () => persistSlots(next));
     }
-    persistSlots(next);
   };
 
   const makeBoardPR = (item, fromNode) => PanResponder.create({
@@ -721,42 +765,54 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         const label = node.label?.trim() || 'slot';
         const isHover = interactive && hoverNode === node.id;
         const dragHandlers = interactive && item ? getBoardPR(item, node.id).panHandlers : {};
+        const dv = getDropVal(node.id);
         return (
-          <View
+          <Animated.View
             key={node.id}
-            ref={ref => { slotRefs.current[node.id] = ref; }}
-            {...dragHandlers}
-            style={[
-              styles.slot,
-              { position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h },
-              isSelected && styles.slotSelected,
-              !item && styles.slotEmpty,
-              isHover && styles.slotHover,
-            ]}
+            style={{
+              position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
+              opacity: dv.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1] }),
+              transform: [
+                { translateY: dv.interpolate({ inputRange: [0, 1], outputRange: [-24, 0] }) },
+                { scale: dv.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1] }) },
+              ],
+            }}
           >
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              onPress={() => item ? setSelected(isSelected ? null : item) : setPickerNode(node.id)}
-              activeOpacity={0.75}
-            />
-            {item ? (
-              (() => {
-                const vw = getVisualScale(item);
-                return (
-                  <Image
-                    source={{ uri: imageUri(item.photoBase64, 'image/png') }}
-                    style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
-                    resizeMode="contain"
-                  />
-                );
-              })()
-            ) : (
-              <View style={styles.emptySlotContent} pointerEvents="none">
-                {!labelVertical && <Text style={styles.emptySlotPlus}>+</Text>}
-                <Text style={[styles.slotLabel, labelVertical && { transform: [{ rotate: '90deg' }] }]}>{label}</Text>
-              </View>
-            )}
-          </View>
+            <View
+              ref={ref => { slotRefs.current[node.id] = ref; }}
+              {...dragHandlers}
+              style={[
+                styles.slot,
+                StyleSheet.absoluteFill,
+                isSelected && styles.slotSelected,
+                !item && styles.slotEmpty,
+                isHover && styles.slotHover,
+              ]}
+            >
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                onPress={() => item ? setSelected(isSelected ? null : item) : setPickerNode(node.id)}
+                activeOpacity={0.75}
+              />
+              {item ? (
+                (() => {
+                  const vw = getVisualScale(item);
+                  return (
+                    <Image
+                      source={{ uri: imageUri(item.photoBase64, 'image/png') }}
+                      style={[styles.slotImage, { width: `${vw.widthPct * 100}%`, height: `${vw.heightPct * 100}%` }]}
+                      resizeMode="contain"
+                    />
+                  );
+                })()
+              ) : (
+                <View style={styles.emptySlotContent} pointerEvents="none">
+                  {!labelVertical && <Text style={styles.emptySlotPlus}>+</Text>}
+                  <Text style={[styles.slotLabel, labelVertical && { transform: [{ rotate: '90deg' }] }]}>{label}</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
         );
       })}
 
@@ -859,6 +915,28 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     return autoArrange ? onBack() : setArranging(false);
   };
 
+  // Shared arc-drop overlay (page coords) — rendered in both the arrange and
+  // main views so the fly-in shows wherever the placement happened.
+  const flyerOverlay = flyer ? (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          left: flyer.rect.x, top: flyer.rect.y,
+          width: flyer.rect.w, height: flyer.rect.h,
+          opacity: flyAnim.interpolate({ inputRange: [0, 0.12, 1], outputRange: [0, 1, 1] }),
+          transform: [
+            { translateY: flyAnim.interpolate({ inputRange: [0, 0.55, 0.72, 0.86, 1], outputRange: [-140, 0, 6, -5, 0] }) },
+            { scale: flyAnim.interpolate({ inputRange: [0, 0.55, 0.72, 0.86, 1], outputRange: [1.18, 1.18, 0.9, 1.05, 1] }) },
+            { rotate: flyAnim.interpolate({ inputRange: [0, 0.72, 1], outputRange: ['-6deg', '-6deg', '0deg'] }) },
+          ],
+        }}
+      >
+        <Image source={{ uri: flyer.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+      </Animated.View>
+    </View>
+  ) : null;
+
   if (arranging) {
     return (
       <View style={styles.container}>
@@ -893,6 +971,9 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             <Image source={{ uri: imageUri(boardDrag.item.photoBase64, 'image/png') }} style={styles.boardGhostImg} resizeMode="contain" />
           </View>
         )}
+
+        {/* Arc-drop: the dropped cut-out flies into its slot. */}
+        {flyerOverlay}
 
         {/* Tutorial: persistent coach pill — nothing may block the drag
             gestures here, so no scrim, just the instruction. Unmounts when
@@ -1282,6 +1363,9 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         </ScrollView>
 
       )}
+
+      {/* Arc-drop: the placed cut-out flies down into its slot (page coords). */}
+      {flyerOverlay}
 
       {/* Slot picker — choose which library item goes in the tapped board slot. */}
       <Modal visible={!!pickerNode} transparent animationType="slide" onRequestClose={() => setPickerNode(null)}>
