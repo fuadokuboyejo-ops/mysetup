@@ -69,9 +69,11 @@ export function useTutorialTarget(active) {
 
   useEffect(() => {
     if (!active) return undefined;
-    // A few quick retries — measureInWindow can return 0s until layout settles,
-    // so we try again fast rather than waiting on one slow timer.
-    const timers = [0, 60, 160, 400].map(ms => setTimeout(measure, ms));
+    // Retry measurement, quickly at first then a few slower passes — the target
+    // may only settle once async content (e.g. a setup photo) has loaded and the
+    // layout reflows. Stopping too early leaves rect null, which strands a modal
+    // overlay on its touch-capturing loading cover (a frozen screen).
+    const timers = [0, 60, 160, 400, 800, 1400, 2200, 3200].map(ms => setTimeout(measure, ms));
     return () => timers.forEach(clearTimeout);
   }, [active, measure]);
 
@@ -362,7 +364,7 @@ function IntroPeachBubble({ stageHeight }) {
       style={[
         styles.introPeachBubble,
         {
-          top: stageHeight * 0.34,
+          top: stageHeight * 0.24,
           opacity: reveal,
           transform: [
             { translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },

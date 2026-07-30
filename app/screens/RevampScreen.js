@@ -8,7 +8,7 @@ import LoadingScreen from '../components/LoadingScreen';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
-import { getAllItems, getSetups, updateSetupPhoto, createSetup, updateSetupLayout, updateSetupSlots, getGenerationsUsed, incrementGenerationsUsed, addGenerationToHistory, GENERATIONS_LIMIT } from '../config/setup';
+import { getAllItems, getSetups, updateSetupPhoto, createSetup, updateSetupLayout, updateSetupSlots, getGenerationsUsed, addGenerationToHistory, GENERATIONS_LIMIT } from '../config/setup';
 import { supabase } from '../config/supabase';
 import { normalizeNodes, computeLayout, nodeSpan } from '../config/boardLayout';
 import { imageUri, isMediaUrl } from '../config/media';
@@ -148,9 +148,24 @@ export default function RevampScreen({ onBack, setup, onArrangeBoard, basePhoto,
         body: payload,
       });
       if (error) throw new Error(error.message || 'Generation failed');
+      // Server-side Pro gate: is_premium is webhook-owned, so this can't be
+      // spoofed from the client. Bounce non-Pro users back out of the flow.
+      if (data?.needsPro) {
+        Alert.alert('Pro required', 'AI Revamp is a Pro feature. Start your free trial to generate setups.', [
+          { text: 'OK', onPress: () => onBack?.() },
+        ]);
+        return;
+      }
+      // The server now meters usage: it atomically consumes a generation before
+      // calling Gemini and rejects over-cap requests, so trust its count.
+      if (data?.limitReached) {
+        setGenerationsUsed(data.generationsUsed ?? GENERATIONS_LIMIT);
+        Alert.alert('Monthly limit reached', `You've used all ${GENERATIONS_LIMIT} generations this month. It resets next month.`);
+        return;
+      }
       if (!data?.image) throw new Error(data?.error || 'Generation failed');
       setImage(data.image);
-      setGenerationsUsed(await incrementGenerationsUsed());
+      if (typeof data.generationsUsed === 'number') setGenerationsUsed(data.generationsUsed);
       // Store a small compressed thumbnail so history stays quick to load.
       ImageManipulator.manipulateAsync(
         `data:image/png;base64,${data.image}`,

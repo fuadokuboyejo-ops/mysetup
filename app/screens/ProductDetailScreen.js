@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import Svg, { Circle, Path } from 'react-native-svg';
 import {
-  fetchItemPrice,
   getAllItems,
   getPosts,
   getSetups,
@@ -220,22 +219,7 @@ export default function ProductDetailScreen({ item: initialItem, onBack, onOpenS
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [pricing, setPricing] = useState(false);
   const [removing, setRemoving] = useState(false);
-
-  const refreshPrice = async () => {
-    if (!item) return;
-    setPricing(true);
-    try {
-      const { item: updated, matched } = await fetchItemPrice(item);
-      if (updated) setItem(updated);
-      if (!matched) Alert.alert('No price found', 'Couldn’t find this product at Best Buy. Try editing the name or brand.');
-    } catch (e) {
-      Alert.alert('Price lookup failed', e.message);
-    } finally {
-      setPricing(false);
-    }
-  };
 
   useEffect(() => setItem(initialItem), [initialItem]);
 
@@ -391,13 +375,6 @@ export default function ProductDetailScreen({ item: initialItem, onBack, onOpenS
               ) : (
                 <Text style={styles.priceNone}>No price yet</Text>
               )}
-              <TouchableOpacity style={styles.priceBtn} onPress={refreshPrice} disabled={pricing} activeOpacity={0.85}>
-                {pricing ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.priceBtnText}>{product.price != null ? 'Refresh price' : 'Get price'}</Text>
-                )}
-              </TouchableOpacity>
             </View>
 
             {/* Affiliate buy button — tags an Amazon product URL if we have one,
@@ -564,8 +541,6 @@ const styles = StyleSheet.create({
   priceValue: { color: C.ink, fontSize: 22, fontWeight: '800' },
   priceWas: { color: C.sub, fontSize: 14, fontWeight: '500', textDecorationLine: 'line-through' },
   priceNone: { color: C.sub, fontSize: 14, fontWeight: '500' },
-  priceBtn: { backgroundColor: C.ink, borderRadius: 18, paddingVertical: 9, paddingHorizontal: 18, minWidth: 96, alignItems: 'center' },
-  priceBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   buyAmazonBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9,
     marginTop: 16, paddingVertical: 15, borderRadius: 26, backgroundColor: '#FFA724',

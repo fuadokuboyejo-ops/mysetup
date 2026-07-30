@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, StatusBar, Alert,
+  View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, StatusBar, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { supabase } from '../config/supabase';
 import { getProfileMedia } from '../config/profile';
+import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '../config/legal';
 
 // ─── Line icons (outline style, matching the settings-list aesthetic) ─────────
 const ICON = '#222222';
@@ -62,6 +63,15 @@ function Chevron() {
     </Svg>
   );
 }
+function DocIcon() {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24">
+      <Path d="M7 3.5h7l3.5 3.5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinejoin="round" />
+      <Path d="M14 3.5V7h3.5" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinejoin="round" />
+      <Path d="M8.5 11.5h7M8.5 14.5h7M8.5 17.5h4" stroke={ICON} strokeWidth={STROKE} fill="none" strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 // A single tappable list row: icon · label · chevron.
 function Row({ icon, label, onPress, danger }) {
@@ -102,6 +112,9 @@ export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onMana
       { text: 'Log out', style: 'destructive', onPress: () => onLogout?.() },
     ]);
   };
+
+  const openLegal = (url) =>
+    Linking.openURL(url).catch(() => Alert.alert('Could not open link', 'Please try again.'));
 
   const confirmDelete = () => {
     Alert.alert(
@@ -169,6 +182,11 @@ export default function SettingsScreen({ onBack, onOpenProfile, onLogout, onMana
           <Text style={S.section}>Account</Text>
           <Row icon={<LogoutIcon color="#D1453B" />} label="Log out" onPress={confirmLogout} danger />
           <Row icon={<TrashIcon />} label="Delete account" onPress={confirmDelete} danger />
+
+          {/* Legal section — required in-app (Apple Guideline 3.1.2) */}
+          <Text style={S.section}>Legal</Text>
+          <Row icon={<DocIcon />} label="Privacy Policy" onPress={() => openLegal(PRIVACY_POLICY_URL)} />
+          <Row icon={<DocIcon />} label="Terms of Use" onPress={() => openLegal(TERMS_OF_USE_URL)} />
 
         </ScrollView>
       </SafeAreaView>

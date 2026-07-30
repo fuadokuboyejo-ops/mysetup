@@ -8,12 +8,14 @@
 // Secret:  supabase secrets set FAPIHUB_API_KEY=...   (fapihub.com)
 //
 // The app invokes it via supabase.functions.invoke('remove-bg', { body: { photo } }),
-// which automatically attaches the signed-in user's JWT. Because verify_jwt stays
-// on (the default), only authenticated users can call it — so random traffic
-// can't burn the FAPIHub quota.
+// which automatically attaches the signed-in user's JWT. Note the gateway's
+// verify_jwt is NOT enough on its own — the shipped anon key also passes it —
+// so we additionally resolve a real user via requireUser() before doing work.
 //
 // FAPIHub returns a PNG *with alpha*, which the board needs to composite items.
 // Models: falcon (default), aurora, ghost — see docs.fapihub.com.
+
+import { enforceDailyQuota, requireUser } from '../_shared/auth.ts';
 
 const FAPIHUB_ENDPOINT = 'https://fapihub.com/v2/rembg/';
 const FAPIHUB_MODEL = 'falcon';
@@ -24,9 +26,9 @@ const corsHeaders = {
 };
 
 // base64 -> bytes
-function decodeBase64(b64: string): Uint8Array {
+function decodeBase64(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
@@ -55,6 +57,16 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get('FAPIHUB_API_KEY');
   if (!apiKey) return json({ error: 'FAPIHUB_API_KEY not configured' }, 500);
+
+  // Require a real signed-in user — the shipped anon key alone passes the
+  // gateway's verify_jwt, so without this check anyone holding it could burn
+  // the FAPIHub quota. (See _shared/auth.ts.)
+  const auth = await requireUser(req);
+  if (!auth) return json({ error: 'Not authenticated' }, 401);
+
+  // Per-user daily cap, enforced server-side before spending FAPIHub quota.
+  const denied = await enforceDailyQuota(auth.supabase, 'remove_bg');
+  if (denied) return json({ error: denied.error }, denied.status);
 
   try {
     const { photo } = await req.json();

@@ -54,6 +54,45 @@ async function signedUrl(bucket, path) {
   return data?.signedUrl || null;
 }
 
+// Batch-sign many objects in ONE Storage API call instead of one round-trip per
+// image. Returns Map<path, signedUrl>; missing/unreadable paths are simply
+// absent so callers degrade to a blank thumbnail. This is what keeps a feed load
+// (dozens of posts × several images each) from fanning out into hundreds of
+// createSignedUrl requests that rate-limit the Storage API under a traffic spike.
+async function signedUrlMap(bucket, paths) {
+  const unique = [...new Set((paths || []).filter(Boolean))];
+  const map = new Map();
+  if (unique.length === 0) return map;
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrls(unique, SIGNED_URL_SECONDS);
+  if (error) {
+    console.warn('[storage] batch signed URLs failed:', bucket, error.message);
+    return map; // callers fall back to null per path
+  }
+  for (const entry of data || []) {
+    if (entry?.signedUrl && !entry.error) map.set(entry.path, entry.signedUrl);
+  }
+  return map;
+}
+
+// A synchronous resolver mapSetup/mapItem can use to look up an already-signed
+// URL from prebuilt maps (see signedUrlMap), keyed by bucket. Same (bucket, path)
+// shape as signedUrl so it drops in as the `resolve` argument.
+function resolverFor(maps) {
+  return (bucket, path) => (path ? (maps[bucket]?.get(path) ?? null) : null);
+}
+
+// Every storage path referenced by a batch of setup rows — used to pre-sign a
+// whole list in one call.
+function collectSetupPaths(rows) {
+  return (rows || []).flatMap(row => [
+    row.photo_path,
+    row.wallpaper_path,
+    ...(row.extra_photo_paths || []),
+  ]);
+}
+
 async function uploadBase64(bucket, path, value, contentType) {
   const base64 = stripDataUrl(value);
   if (!base64) throw new Error('The selected media could not be read.');
@@ -87,12 +126,14 @@ async function removeStorageObjects(bucket, paths) {
   if (error) console.warn(`[storage] Could not remove ${bucket} objects:`, error.message);
 }
 
-async function mapSetup(row) {
+async function mapSetup(row, resolve = signedUrl) {
   if (!row) return null;
+  // Guard against `.map(mapSetup)` passing the array index as `resolve`.
+  if (typeof resolve !== 'function') resolve = signedUrl;
   const [photo, monitorWallpaper, ...extraPhotos] = await Promise.all([
-    signedUrl(BUCKETS.setups, row.photo_path),
-    signedUrl(BUCKETS.setups, row.wallpaper_path),
-    ...(row.extra_photo_paths || []).map(path => signedUrl(BUCKETS.setups, path)),
+    resolve(BUCKETS.setups, row.photo_path),
+    resolve(BUCKETS.setups, row.wallpaper_path),
+    ...(row.extra_photo_paths || []).map(path => resolve(BUCKETS.setups, path)),
   ]);
   return {
     id: row.id,
@@ -113,13 +154,15 @@ async function mapSetup(row) {
   };
 }
 
-async function mapItem(row) {
+async function mapItem(row, resolve = signedUrl) {
   if (!row) return null;
+  // Guard against `.map(mapItem)` passing the array index as `resolve`.
+  if (typeof resolve !== 'function') resolve = signedUrl;
   return {
     id: row.id,
     userId: row.user_id,
     product: row.product || {},
-    photoBase64: await signedUrl(BUCKETS.items, row.photo_path),
+    photoBase64: await resolve(BUCKETS.items, row.photo_path),
     photoPath: row.photo_path,
     isCutout: row.is_cutout,
     isPublic: row.is_public,
@@ -152,7 +195,9 @@ export async function getSetups() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true });
   throwIfError(error);
-  return Promise.all((data || []).map(mapSetup));
+  const rows = data || [];
+  const resolve = resolverFor({ [BUCKETS.setups]: await signedUrlMap(BUCKETS.setups, collectSetupPaths(rows)) });
+  return Promise.all(rows.map(row => mapSetup(row, resolve)));
 }
 
 export async function createSetup(name, type = 'pc') {
@@ -174,7 +219,9 @@ export async function getAllItems() {
     .eq('user_id', user.id)
     .order('added_at', { ascending: false });
   throwIfError(error);
-  return Promise.all((data || []).map(mapItem));
+  const rows = data || [];
+  const resolve = resolverFor({ [BUCKETS.items]: await signedUrlMap(BUCKETS.items, rows.map(row => row.photo_path)) });
+  return Promise.all(rows.map(row => mapItem(row, resolve)));
 }
 
 export async function getPublicItems() {
@@ -186,7 +233,9 @@ export async function getPublicItems() {
     .order('added_at', { ascending: false })
     .limit(100);
   throwIfError(error);
-  return Promise.all((data || []).map(mapItem));
+  const rows = data || [];
+  const resolve = resolverFor({ [BUCKETS.items]: await signedUrlMap(BUCKETS.items, rows.map(row => row.photo_path)) });
+  return Promise.all(rows.map(row => mapItem(row, resolve)));
 }
 
 export async function getSetupItems() {
@@ -473,14 +522,9 @@ export async function getIsPremium() {
   return !!data?.is_premium;
 }
 
-export async function setIsPremium(value) {
-  const user = await currentUser();
-  const { error } = await supabase
-    .from('profiles')
-    .update({ is_premium: !!value, updated_at: new Date().toISOString() })
-    .eq('id', user.id);
-  throwIfError(error);
-}
+// NOTE: is_premium is server-authoritative (RevenueCat webhook + migration
+// 0007) and the generation counters move only via server RPCs (migration
+// 0008) — there is deliberately no client setter for any of them.
 
 function currentMonthKey() {
   const date = new Date();
@@ -496,12 +540,6 @@ export async function getGenerationsUsed() {
     .single();
   throwIfError(error);
   return data?.generations_month === currentMonthKey() ? data.generations_count : 0;
-}
-
-export async function incrementGenerationsUsed() {
-  const { data, error } = await supabase.rpc('increment_generation_count');
-  throwIfError(error);
-  return data;
 }
 
 export async function getGenerationHistory() {
@@ -579,15 +617,19 @@ export async function getPosts() {
   const userIds = [...new Set(rows.map(row => row.user_id))];
   const [{ data: setupRows, error: setupsError }, { data: profileRows, error: profilesError }] = await Promise.all([
     supabase.from('setups').select('*').in('id', setupIds),
+    // public_profiles (not profiles): the base table is own-row-only under RLS;
+    // other users' PUBLIC columns are exposed through this view (migration 0008).
     supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, username, display_name, bio, avatar_path, banner_path, account_private')
       .in('id', userIds),
   ]);
   throwIfError(setupsError);
   throwIfError(profilesError);
 
-  const mappedSetups = await Promise.all((setupRows || []).map(mapSetup));
+  // Batch-sign every setup image across the whole feed in one call, then map.
+  const setupResolve = resolverFor({ [BUCKETS.setups]: await signedUrlMap(BUCKETS.setups, collectSetupPaths(setupRows)) });
+  const mappedSetups = await Promise.all((setupRows || []).map(row => mapSetup(row, setupResolve)));
   const setupById = new Map(mappedSetups.map(setup => [setup.id, setup]));
   const allItemIds = [...new Set(mappedSetups.flatMap(setupItemIds))];
   let mappedItems = [];
@@ -597,7 +639,9 @@ export async function getPosts() {
       .select('*')
       .in('id', allItemIds);
     throwIfError(itemsError);
-    mappedItems = await Promise.all((itemRows || []).map(mapItem));
+    // ...and one more batched call for every board item's image.
+    const itemResolve = resolverFor({ [BUCKETS.items]: await signedUrlMap(BUCKETS.items, (itemRows || []).map(row => row.photo_path)) });
+    mappedItems = await Promise.all((itemRows || []).map(row => mapItem(row, itemResolve)));
   }
   const itemById = new Map(mappedItems.map(item => [item.id, item]));
   const profileById = new Map((profileRows || []).map(profile => [profile.id, profile]));

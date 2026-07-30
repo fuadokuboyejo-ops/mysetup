@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform, Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -62,11 +62,22 @@ export default function CameraScreen({ onPhotoTaken, onBack, productType, produc
   }
 
   if (!permission.granted) {
+    // iOS only shows the system camera prompt once. After a denial requestPermission
+    // can no longer re-show it, so send the user to Settings instead of stranding
+    // them on a button that does nothing.
+    const denied = !permission.canAskAgain;
     return (
       <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>Camera access is needed to scan your setup.</Text>
-        <TouchableOpacity style={styles.permButton} onPress={requestPermission}>
-          <Text style={styles.permButtonText}>Grant Permission</Text>
+        <Text style={styles.permissionText}>
+          {denied
+            ? 'Camera access is off. Enable it in Settings to scan your setup.'
+            : 'Camera access is needed to scan your setup.'}
+        </Text>
+        <TouchableOpacity
+          style={styles.permButton}
+          onPress={denied ? () => Linking.openSettings() : requestPermission}
+        >
+          <Text style={styles.permButtonText}>{denied ? 'Open Settings' : 'Grant Permission'}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onBack}>
           <Text style={styles.backLink}>Go back</Text>

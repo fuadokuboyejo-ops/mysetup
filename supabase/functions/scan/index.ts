@@ -6,6 +6,8 @@
 //
 // App: supabase.functions.invoke('scan', { body: { photo, productType } })
 
+import { enforceDailyQuota, requireUser } from '../_shared/auth.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -65,6 +67,16 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get('MISTRAL_API_KEY');
   if (!apiKey) return json({ error: 'MISTRAL_API_KEY not configured' }, 503);
+
+  // Require a real signed-in user — the shipped anon key alone passes the
+  // gateway's verify_jwt, so without this check anyone holding it could burn
+  // the Mistral quota. (See _shared/auth.ts.)
+  const auth = await requireUser(req);
+  if (!auth) return json({ error: 'Not authenticated' }, 401);
+
+  // Per-user daily cap, enforced server-side before spending Mistral quota.
+  const denied = await enforceDailyQuota(auth.supabase, 'scan');
+  if (denied) return json({ error: denied.error }, denied.status);
 
   try {
     const { photo, productType = 'other' } = await req.json();

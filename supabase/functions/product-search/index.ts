@@ -12,6 +12,8 @@
 // App:     supabase.functions.invoke('product-search', { body: { q, category, limit } })
 // Returns: { results: [{ itemId, title, image, price, currency, condition, url }] }
 
+import { requireUser } from '../_shared/auth.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -92,6 +94,11 @@ Deno.serve(async (req) => {
   if (!clientId || !clientSecret) {
     return json({ error: 'EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not configured' }, 500);
   }
+
+  // Require a real signed-in user — the shipped anon key alone passes the
+  // gateway's verify_jwt, so without this check anyone holding it could burn
+  // the eBay API quota. (See _shared/auth.ts.)
+  if (!(await requireUser(req))) return json({ error: 'Not authenticated' }, 401);
 
   try {
     const { q, category, limit } = await req.json();

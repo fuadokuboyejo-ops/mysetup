@@ -44,6 +44,24 @@ export async function initPurchases() {
   }
 }
 
+// Tie the RevenueCat identity to the signed-in Supabase user so purchases are
+// attributable server-side — the revenuecat-webhook maps events to a profile by
+// this app_user_id. Without this, RevenueCat uses an anonymous id the webhook
+// can't resolve. Call on sign-in; safe to call repeatedly.
+export async function identifyPurchases(userId) {
+  if (!NativeModules.RNPurchases || !userId) return;
+  try { await Purchases.logIn(userId); }
+  catch (e) { console.warn('[purchases] logIn failed:', e?.message || e); }
+}
+
+// Return RevenueCat to an anonymous id on sign-out so the next account signed in
+// on this device doesn't inherit this user's entitlements.
+export async function signOutPurchases() {
+  if (!NativeModules.RNPurchases) return;
+  try { await Purchases.logOut(); }
+  catch { /* already anonymous — nothing to do */ }
+}
+
 // True when the signed-in RevenueCat user has the pro entitlement active.
 export async function hasProEntitlement() {
   try {
@@ -61,7 +79,17 @@ export async function getProOfferings() {
   if (!NativeModules.RNPurchases) return null;
   try {
     const offerings = await Purchases.getOfferings();
-    return offerings?.current ?? null;
+    const current = offerings?.current ?? null;
+    // Diagnostic: shows why the paywall may be empty — no current offering,
+    // zero packages (products didn't load from StoreKit), or wrong package types.
+    console.log('[purchases] offerings →', JSON.stringify({
+      currentId: current?.identifier ?? null,
+      allOfferingIds: Object.keys(offerings?.all || {}),
+      packageCount: current?.availablePackages?.length ?? 0,
+      packageTypes: (current?.availablePackages || []).map(p => p.packageType),
+      productIds: (current?.availablePackages || []).map(p => p.product?.identifier),
+    }));
+    return current;
   } catch (e) {
     console.warn('[purchases] getOfferings failed:', e?.message || e);
     return null;

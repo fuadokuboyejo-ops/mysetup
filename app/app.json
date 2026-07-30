@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mysetup.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -59,7 +60,8 @@
       "expo-image",
       "expo-status-bar",
       "expo-web-browser",
-      "expo-asset"
+      "expo-asset",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {

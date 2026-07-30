@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   ScrollView,
   StatusBar,
@@ -13,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { getProOfferings, purchasePackage, restorePurchases, introOffer } from '../config/purchases';
+import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '../config/legal';
 
 const HERO = require('../assets/onboarding_trial_hero.png');
 const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
@@ -38,7 +40,7 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
     return () => { active = false; };
   }, []);
 
-  const price = annualPackage?.product?.priceString || '$39.99';
+  const price = annualPackage?.product?.priceString || '$59.99';
   const trial = annualPackage ? introOffer(annualPackage) : null;
   // Use the store's real trial period when available; default to 3-day so the
   // screen still advertises the trial before the products / real SDK key are live.
@@ -70,6 +72,9 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
     }
     Alert.alert('Restore Subscription', error || 'No active subscription was found.');
   };
+
+  const openLegal = (url) =>
+    Linking.openURL(url).catch(() => Alert.alert('Could not open link', 'Please try again.'));
 
   return (
     <View style={styles.container}>
@@ -127,6 +132,16 @@ export default function OnboardingTrialScreen({ onUnlock, onClose }) {
           <TouchableOpacity onPress={restore} disabled={loading} activeOpacity={0.65}>
             <Text style={styles.restore}>Restore subscription</Text>
           </TouchableOpacity>
+
+          <View style={styles.legalRow}>
+            <TouchableOpacity onPress={() => openLegal(TERMS_OF_USE_URL)} activeOpacity={0.7}>
+              <Text style={styles.legalLink}>Terms of Use</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
+            <TouchableOpacity onPress={() => openLegal(PRIVACY_POLICY_URL)} activeOpacity={0.7}>
+              <Text style={styles.legalLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -222,4 +237,13 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingHorizontal: 12,
   },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingTop: 2,
+  },
+  legalLink: { color: C.body, fontSize: 10.5, fontWeight: '600', textDecorationLine: 'underline' },
+  legalDot: { color: C.body, fontSize: 10.5 },
 });

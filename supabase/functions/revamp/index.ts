@@ -17,6 +17,8 @@
 //   • basePhoto absent   → GENERATE mode: compose a fresh desk photo from the
 //     item reference images.
 
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -56,12 +58,51 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) return json({ error: 'GEMINI_API_KEY not configured' }, 500);
 
-  try {
-    const { items, style, basePhoto, basePhotoUrl, setupType } = await req.json();
-    if (!Array.isArray(items) || items.length === 0) {
-      return json({ error: 'No items provided' }, 400);
-    }
+  // Authenticate the caller. The JWT gateway already rejects anonymous calls,
+  // but we need the identity to meter per-user usage. Forwarding the caller's
+  // Authorization header makes the RPCs below run as that user (auth.uid()).
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: req.headers.get('Authorization') || '' } } },
+  );
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) return json({ error: 'Not authenticated' }, 401);
 
+  let payload: Record<string, unknown>;
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: 'Invalid request body' }, 400);
+  }
+  const { items, style, basePhoto, basePhotoUrl, setupType } = (payload ?? {}) as Record<string, any>;
+  if (!Array.isArray(items) || items.length === 0) {
+    return json({ error: 'No items provided' }, 400);
+  }
+
+  // Pro-gate server-side: is_premium is written only by the RevenueCat webhook
+  // (see migration 0007), so the client can't self-grant. A user who bypasses
+  // the in-app paywall still can't generate. needsPro → app shows the paywall.
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('is_premium')
+    .eq('id', authData.user.id)
+    .single();
+  if (profileError) return json({ error: profileError.message }, 500);
+  if (!profile?.is_premium) return json({ needsPro: true }, 200);
+
+  // Enforce the monthly cap server-side and atomically, BEFORE spending any
+  // Gemini quota. The limit lives inside consume_generation() (server-owned), so
+  // the client can't raise it or skip the increment. Over the cap → 200 with
+  // limitReached so the app shows the "resets next month" copy without erroring.
+  const { data: consumed, error: consumeError } = await supabase.rpc('consume_generation');
+  if (consumeError) return json({ error: consumeError.message }, 500);
+  const usage = Array.isArray(consumed) ? consumed[0] : consumed;
+  if (!usage?.allowed) {
+    return json({ limitReached: true, generationsUsed: usage?.used_count ?? null }, 200);
+  }
+
+  try {
     const itemList = items
       .map((i: { name?: string; category?: string }) =>
         `${i.name || 'item'}${i.category ? ` (${i.category})` : ''}`)
@@ -135,16 +176,23 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ contents: [{ parts }] }),
     });
     const data = await r.json();
-    if (!r.ok) return json({ error: data?.error?.message || 'Gemini request failed' }, 502);
+    if (!r.ok) {
+      await supabase.rpc('refund_generation'); // don't charge for a failed attempt
+      return json({ error: data?.error?.message || 'Gemini request failed' }, 502);
+    }
 
     // Generated image comes back as an inline_data part (camelCase in responses).
     const outParts = data?.candidates?.[0]?.content?.parts || [];
     const imgPart = outParts.find((p: Record<string, any>) => p.inlineData?.data || p.inline_data?.data);
     const image = imgPart?.inlineData?.data || imgPart?.inline_data?.data;
-    if (!image) return json({ error: 'No image returned from Gemini' }, 502);
+    if (!image) {
+      await supabase.rpc('refund_generation');
+      return json({ error: 'No image returned from Gemini' }, 502);
+    }
 
-    return json({ image });
+    return json({ image, generationsUsed: usage.used_count });
   } catch (e) {
+    await supabase.rpc('refund_generation'); // release the reserved slot on any failure
     return json({ error: e instanceof Error ? e.message : 'Unexpected error' }, 500);
   }
 });

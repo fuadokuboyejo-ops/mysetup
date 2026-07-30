@@ -20,7 +20,26 @@ export async function signUp(email, password) {
     password,
     options: { emailRedirectTo: AUTH_REDIRECT_URL },
   });
-  return { user: data?.user ?? null, session: data?.session ?? null, error: error?.message ?? null };
+  if (error) {
+    // With email confirmations OFF, a duplicate signup errors outright
+    // ("User already registered"). Flag it so the UI can steer to sign-in.
+    const alreadyRegistered = /already registered|already exists/i.test(error.message);
+    return { user: null, session: null, error: error.message, alreadyRegistered };
+  }
+  // With email confirmations ON, Supabase does NOT error on a duplicate email
+  // (to avoid revealing which addresses exist). It returns a decoy user with an
+  // empty identities array instead. Detect that and treat it as "already have
+  // an account" rather than silently waiting on a confirmation that never comes.
+  const identities = data?.user?.identities;
+  if (Array.isArray(identities) && identities.length === 0) {
+    return {
+      user: null,
+      session: null,
+      error: 'An account with this email already exists. Please sign in instead.',
+      alreadyRegistered: true,
+    };
+  }
+  return { user: data?.user ?? null, session: data?.session ?? null, error: null, alreadyRegistered: false };
 }
 
 export async function resendSignupConfirmation(email) {

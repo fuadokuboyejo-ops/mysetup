@@ -36,8 +36,10 @@ export async function getFeedback() {
   if (!rows.length) return [];
 
   const userIds = [...new Set(rows.map(r => r.user_id))];
+  // public_profiles (not profiles): the base table is own-row-only under RLS;
+  // other users' PUBLIC columns are exposed through this view (migration 0008).
   const { data: profiles } = await supabase
-    .from('profiles')
+    .from('public_profiles')
     .select('id, username, display_name')
     .in('id', userIds);
   const byId = new Map((profiles || []).map(p => [p.id, p]));

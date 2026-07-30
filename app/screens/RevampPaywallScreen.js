@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Linking,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { getProOfferings, purchasePackage, restorePurchases, introOffer } from '../config/purchases';
+import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL } from '../config/legal';
 
 const SUBSCREEN_GIF = require('../assets/subscreen.gif');
 const HERO_IMAGE = require('../assets/revamp_paywall_hero.png');
@@ -29,15 +31,15 @@ const FEATURES = [
 const PLANS = {
   yearly: {
     label: 'Yearly',
-    price: '$39.99',
+    price: '$59.99',
     period: '/year',
     periodWord: 'year',
-    sub: '$3.33/mo',
-    save: 'Save 33%',
+    sub: '$5.00/mo',
+    save: 'Save 67%',
   },
   monthly: {
     label: 'Monthly',
-    price: '$4.99',
+    price: '$14.99',
     period: '/mo',
     periodWord: 'month',
     sub: 'Billed monthly',
@@ -200,6 +202,9 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
     Alert.alert('Restore Subscription', error || 'No active subscription found for this account.');
   };
 
+  const openLegal = (url) =>
+    Linking.openURL(url).catch(() => Alert.alert('Could not open link', 'Please try again.'));
+
   if (celebrating) {
     return (
       <View style={styles.container}>
@@ -328,6 +333,16 @@ export default function RevampPaywallScreen({ onUnlock, onBack }) {
           <TouchableOpacity onPress={restore} disabled={loading} activeOpacity={0.7}>
             <Text style={styles.restore}>Restore Subscription</Text>
           </TouchableOpacity>
+
+          <View style={styles.legalRow}>
+            <TouchableOpacity onPress={() => openLegal(TERMS_OF_USE_URL)} activeOpacity={0.7}>
+              <Text style={styles.legalLink}>Terms of Use</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
+            <TouchableOpacity onPress={() => openLegal(PRIVACY_POLICY_URL)} activeOpacity={0.7}>
+              <Text style={styles.legalLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -609,6 +624,16 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     paddingVertical: 15,
   },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: -6,
+    paddingBottom: 4,
+  },
+  legalLink: { color: C.body, fontSize: 10.5, fontWeight: '600', textDecorationLine: 'underline' },
+  legalDot: { color: C.body, fontSize: 10.5 },
 
   celebrateSafe: {
     flex: 1,

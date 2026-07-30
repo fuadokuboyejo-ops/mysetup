@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, Modal, Animated, Platform,
 } from 'react-native';
@@ -409,7 +409,7 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
     refreshingRef.current = true;
     setRefreshing(true);
     // Hold the feed down so the refresher stays visible while we reload (iOS).
-    if (Platform.OS === 'ios') scrollRef.current?.scrollTo?.({ y: -PULL_REST, animated: true });
+    if (Platform.OS === 'ios') scrollRef.current?.scrollToOffset?.({ offset: -PULL_REST, animated: true });
     const started = Date.now();
     try { await loadFeed(); } catch { /* keep the current feed */ }
     // Keep the refresher up long enough to read (~1s) even if the fetch is fast.
@@ -417,13 +417,39 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
     setTimeout(() => {
       refreshingRef.current = false;
       setRefreshing(false);
-      scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+      scrollRef.current?.scrollToOffset?.({ offset: 0, animated: true });
     }, wait);
   };
 
   // Refresher reveal driven by how far the feed is pulled (iOS overscroll = -y).
   const refresherOpacity = scrollY.interpolate({ inputRange: [-PULL_THRESHOLD, -12], outputRange: [1, 0], extrapolate: 'clamp' });
   const refresherScale = scrollY.interpolate({ inputRange: [-PULL_THRESHOLD, -20], outputRange: [1, 0.45], extrapolate: 'clamp' });
+
+  // Flatten the feed into one virtualized list: the user's real posts first,
+  // then the sample/template setups. Each entry carries a stable key and its
+  // avatar so the FlatList only renders the handful of cards on screen instead
+  // of mounting every card (images, boards) at once.
+  const feedData = useMemo(() => ([
+    ...userPosts.map(setup => ({
+      key: String(setup.id),
+      setup,
+      avatarUri: setup.username === 'you' ? myAvatarUri : undefined,
+    })),
+    ...MOCK_SETUPS.map(setup => ({
+      key: `template-${setup.id}`,
+      setup,
+      avatarUri: undefined,
+    })),
+  ]), [userPosts, myAvatarUri]);
+
+  const keyExtractor = useCallback(item => item.key, []);
+  const renderCard = useCallback(({ item }) => (
+    <SetupCard
+      setup={item.setup}
+      avatarUri={item.avatarUri}
+      onPress={() => setOpenedPost(item.setup)}
+    />
+  ), []);
 
   return (
     <View style={styles.container}>
@@ -476,8 +502,11 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
             />
           </Animated.View>
 
-        <Animated.ScrollView
+        <Animated.FlatList
           ref={scrollRef}
+          data={feedData}
+          renderItem={renderCard}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.feed}
           style={styles.feedScroll}
           showsVerticalScrollIndicator={false}
@@ -485,25 +514,11 @@ export default function HomeScreen({ onStartScan, onViewSetup, onRevamp, onSearc
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
           onScrollEndDrag={(e) => { if (e.nativeEvent.contentOffset.y <= -PULL_THRESHOLD) triggerRefresh(); }}
           contentInset={Platform.OS === 'ios' ? { top: refreshing ? PULL_REST : 0 } : undefined}
-        >
-          {/* The user's real posts first, then the sample/template setups so the
-              feed always has content to explore. */}
-          {userPosts.map(setup => (
-            <SetupCard
-              key={setup.id}
-              setup={setup}
-              avatarUri={setup.username === 'you' ? myAvatarUri : undefined}
-              onPress={() => setOpenedPost(setup)}
-            />
-          ))}
-          {MOCK_SETUPS.map(setup => (
-            <SetupCard
-              key={`template-${setup.id}`}
-              setup={setup}
-              onPress={() => setOpenedPost(setup)}
-            />
-          ))}
-        </Animated.ScrollView>
+          initialNumToRender={5}
+          maxToRenderPerBatch={6}
+          windowSize={9}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
         </View>
 
       </SafeAreaView>

@@ -16,15 +16,15 @@ import OnboardingFounderScreen from './screens/OnboardingFounderScreen';
 import OnboardingProfileScreen from './screens/OnboardingProfileScreen';
 import OnboardingTrialScreen from './screens/OnboardingTrialScreen';
 import OnboardingBuildSetupScreen from './screens/OnboardingBuildSetupScreen';
-import { createSetup, getSetups, getIsPremium, setIsPremium, addSetupItem } from './config/setup';
-import { initPurchases, hasProEntitlement } from './config/purchases';
+import { createSetup, getSetups, getIsPremium, addSetupItem } from './config/setup';
+import { initPurchases, hasProEntitlement, identifyPurchases, signOutPurchases } from './config/purchases';
 import { supabase } from './config/supabase';
 import { handleAuthRedirect, signOut, deleteAccount } from './config/auth';
 import { imageUri } from './config/media';
 import {
   TUTORIAL_STEPS, initTutorial, preloadTutorial, setTutorialUser, resetTutorialForNewAccount, clearTutorialFlag,
   advanceTutorial, jumpTutorial, rewindTutorial, completeTutorial, startTutorialAtStep,
-  skipTutorial, isTutorialActive, useTutorialState,
+  skipTutorial, isTutorialActive, useTutorialState, suppressTutorialForSignIn,
 } from './config/tutorial';
 import TutorialCelebration from './components/TutorialCelebration';
 import TutorialEndScreen from './screens/TutorialEndScreen';
@@ -72,6 +72,18 @@ const PRELOAD_ASSETS = [
 // signing out. Set to false for normal signed-in launches. Ignored in prod.
 const DEV_FORCE_ONBOARDING = false;
 
+// A user's first-ever sign-in has created_at ≈ last_sign_in_at. Used to decide
+// whether a login should run the first-run onboarding (founder note + build a
+// board) or drop straight onto the feed. Email signup/signin carry an explicit
+// isNewAccount flag; OAuth (Google/Apple) doesn't, so we infer it from the
+// timestamps on the returned user.
+function isFirstSignIn(user) {
+  if (!user?.created_at) return false;
+  const created = new Date(user.created_at).getTime();
+  const lastSignIn = user.last_sign_in_at ? new Date(user.last_sign_in_at).getTime() : created;
+  return Math.abs(lastSignIn - created) < 5000; // within 5s → same session as signup
+}
+
 export default function App() {
   // Gate the app behind an initial asset-preload + setup load.
   const [ready, setReady] = useState(false);
@@ -111,7 +123,12 @@ export default function App() {
   // where another account already finished it.
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setTutorialUser(session?.user?.id ?? null);
+      const userId = session?.user?.id ?? null;
+      setTutorialUser(userId);
+      // Keep RevenueCat's identity in sync so subscriptions are attributable to
+      // this Supabase user (the webhook maps events by it).
+      if (userId) identifyPurchases(userId);
+      else signOutPurchases();
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -232,12 +249,11 @@ export default function App() {
     };
   }, []);
 
-  // Mark the account pro locally + persist it. RevenueCat's entitlement is the
-  // real source of truth (re-synced on launch), this just reflects it in-app now.
-  const unlockPremium = async () => {
-    setIsPremiumState(true);
-    try { await setIsPremium(true); } catch (e) { console.warn('[app] persist premium failed:', e?.message || e); }
-  };
+  // Reflect Pro in the UI immediately after a purchase. is_premium in the DB is
+  // now owned by the RevenueCat webhook (server-authoritative), so we no longer
+  // write it from the client — the SDK entitlement + this local flag drive the
+  // UI, and the webhook syncs the DB within seconds.
+  const unlockPremium = () => setIsPremiumState(true);
 
   const openRevamp = () => setScreen(isPremium ? 'revamp-menu' : 'revamp-paywall');
 
@@ -525,10 +541,21 @@ export default function App() {
       return (
         <OnboardingAccountScreen
           onContinue={(data) => {
-            // A fresh signup always gets its own first-run tour, even if the
-            // email (and recycled user id) matches a just-deleted account.
-            if (data?.isNewAccount) resetTutorialForNewAccount(data.user?.id);
-            setScreen('onboarding-founder');
+            // "New" when the account screen says so (email signup) or, for OAuth
+            // where that flag isn't set, when this is the user's first sign-in.
+            const isNew = data?.isNewAccount ?? isFirstSignIn(data?.user);
+            if (isNew) {
+              // Fresh account gets the first-run journey: founder note → build a
+              // board. A fresh signup also gets its own tutorial, even if the
+              // email (and recycled user id) matches a just-deleted account.
+              resetTutorialForNewAccount(data?.user?.id);
+              setScreen('onboarding-founder');
+            } else {
+              // Returning user signing in — never show the first-run tutorial,
+              // and skip the founder note / build-a-board step; go to the feed.
+              suppressTutorialForSignIn(data?.user?.id);
+              goToFeed();
+            }
           }}
           onBack={() => setScreen('onboarding-style')}
           onSkip={goToFeed}

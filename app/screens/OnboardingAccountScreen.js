@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { signUp, signIn, resendSignupConfirmation } from '../config/auth';
 import { signInWithGoogle } from '../config/googleAuth';
+import { signInWithApple } from '../config/appleAuth';
 import { GoogleLogo, AppleLogo } from '../components/SocialIcons';
 
 const PEEKING_BOT = require('../assets/peeking_bot.png');
@@ -73,11 +74,19 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
     setError(null);
     setNotice(null);
     const fn = isSignIn ? signIn : signUp;
-    const { user, session, error: err } = await fn(email, password);
+    const { user, session, error: err, alreadyRegistered } = await fn(email, password);
     setLoading(false);
+    if (alreadyRegistered) {
+      // Email is taken — flip to the sign-in form (keeping their email) instead
+      // of creating a duplicate or waiting on a confirmation that never arrives.
+      setMode('signin');
+      setPassword('');
+      setError('You already have an account with this email — please sign in.');
+      return;
+    }
     if (err) {
-      // Surface Supabase's message (bad password, already registered, email
-      // confirmation required, etc.) rather than dead-ending onboarding.
+      // Surface Supabase's message (bad password, email confirmation required,
+      // etc.) rather than dead-ending onboarding.
       setError(err);
       return;
     }
@@ -112,10 +121,16 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
     onContinue({ user });
   };
 
-  // Apple isn't wired yet (needs a paid Apple Developer account + provider
-  // config). Kept stubbed so the button stays in the UI.
-  const handleApple = () => {
-    setError('Apple sign-in isn’t set up yet — coming soon.');
+  // Native Apple Sign-In (iOS only). Requires a development build and the Apple
+  // provider enabled in Supabase. See app/config/appleAuth.js.
+  const handleApple = async () => {
+    setLoading(true);
+    setError(null);
+    const { user, error: err, cancelled } = await signInWithApple();
+    setLoading(false);
+    if (cancelled) return;
+    if (err) { setError(err); return; }
+    onContinue({ user });
   };
 
   return (
@@ -239,14 +254,16 @@ export default function OnboardingAccountScreen({ onContinue, onBack, onSkip }) 
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity
-              style={styles.appleBtn}
-              onPress={handleApple}
-              activeOpacity={0.85}
-            >
-              <AppleLogo size={18} color="#FFFFFF" />
-              <Text style={styles.appleText}>Continue with Apple</Text>
-            </TouchableOpacity>
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={styles.appleBtn}
+                onPress={handleApple}
+                activeOpacity={0.85}
+              >
+                <AppleLogo size={18} color="#FFFFFF" />
+                <Text style={styles.appleText}>Continue with Apple</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.googleBtn}

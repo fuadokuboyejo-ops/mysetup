@@ -240,6 +240,15 @@ export async function resetTutorialForNewAccount(userId) {
   setState({ status: 'idle', stepIndex: 0 });
 }
 
+// A returning user signing IN should never see the first-run tour — it's for
+// brand-new accounts only. Mark it done for their account (persisting the flag)
+// so it stays suppressed even on a fresh device where the flag wasn't present.
+// Call this on SIGN-IN only; sign-up uses resetTutorialForNewAccount instead.
+export function suppressTutorialForSignIn(userId) {
+  if (userId) currentUserId = userId;
+  finish();
+}
+
 // Load the completion flag during the launch loading screen so initTutorial can
 // decide without awaiting. Pass the signed-in user id to scope it per account.
 export async function preloadTutorial(userId) {

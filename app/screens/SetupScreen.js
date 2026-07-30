@@ -511,11 +511,18 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
     persistSlots(next);
   };
 
+  // The Alert's onPress fires while the alert is still animating away — on iOS,
+  // presenting the picker from a view controller that's mid-dismissal silently
+  // fails, so the first "+ Add photo" tap appears to do nothing. Wait a beat for
+  // the alert's dismissal to finish before presenting the picker.
+  const afterAlertDismiss = () => new Promise(resolve => setTimeout(resolve, 500));
+
   const pickPhoto = () => {
     Alert.alert('Setup photo', null, [
       {
         text: 'Take photo',
         onPress: async () => {
+          await afterAlertDismiss();
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') {
             Alert.alert('Permission needed', 'Allow camera access to take a photo.');
@@ -526,16 +533,20 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             quality: 0.7,
             base64: true,
           });
-          if (!result.canceled && result.assets?.[0]?.base64) {
-            const b64 = result.assets[0].base64;
-            setSetupPhoto(b64);
-            await updateSetupPhoto(setup?.id || 'default', b64);
+          if (!result.canceled && result.assets?.[0]) {
+            const asset = result.assets[0];
+            // Show the local file URI for immediate display — a multi-MB base64
+            // data URI silently fails to load in RN's <Image> on iOS. The upload
+            // below still uses the base64 (Storage wants bytes, not a file URI).
+            setSetupPhoto(asset.uri);
+            if (asset.base64) await updateSetupPhoto(setup?.id || 'default', asset.base64);
           }
         },
       },
       {
         text: 'Choose from library',
         onPress: async () => {
+          await afterAlertDismiss();
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
           if (status !== 'granted') {
             Alert.alert('Permission needed', 'Allow photo library access to add a setup photo.');
@@ -547,10 +558,13 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
             quality: 0.7,
             base64: true,
           });
-          if (!result.canceled && result.assets?.[0]?.base64) {
-            const b64 = result.assets[0].base64;
-            setSetupPhoto(b64);
-            await updateSetupPhoto(setup?.id || 'default', b64);
+          if (!result.canceled && result.assets?.[0]) {
+            const asset = result.assets[0];
+            // Show the local file URI for immediate display — a multi-MB base64
+            // data URI silently fails to load in RN's <Image> on iOS. The upload
+            // below still uses the base64 (Storage wants bytes, not a file URI).
+            setSetupPhoto(asset.uri);
+            if (asset.base64) await updateSetupPhoto(setup?.id || 'default', asset.base64);
           }
         },
       },
@@ -1148,7 +1162,7 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
           <ScrollView style={styles.photoScroll} showsVerticalScrollIndicator={false} bounces>
             {/* Photo — shown at its natural aspect with 'contain' so the whole
                 image is visible and tag %-positions map straight onto it. */}
-            <View style={[styles.photoAreaScroll, photoAspect ? { aspectRatio: photoAspect } : null]}>
+            <View style={[styles.photoAreaScroll, { aspectRatio: photoAspect || 16 / 9 }]}>
               {setupPhoto ? (
                 <Image
                   source={{ uri: imageUri(setupPhoto) }}
@@ -1464,26 +1478,25 @@ export default function SetupScreen({ setup, initialView = 'board', autoArrange 
         />
       )}
 
-      {/* Tutorial: spotlight "+ Add photo" and prompt for a full-setup photo. */}
-      {photoAddStep.active && !arranging && (
+      {/* Tutorial: spotlight "+ Add photo", then "Edit tags" — ONE persistent
+          Modal for both steps. They must not be separate <TutorialOverlay>
+          elements: add-photo advances the instant the picked photo lands,
+          while the image-picker view controller is still dismissing, and
+          swapping Modals at that moment (dismiss one VC + present another
+          mid-transition) wedges UIKit — an orphaned transparent modal window
+          keeps eating touches and the screen freezes. With one mounted Modal
+          only the content changes, so there's no native present/dismiss
+          during the picker handoff. */}
+      {!arranging
+        && (photoAddStep.active || (editTagsStep.active && view === 'photo' && !tagsOn)) && (
         <TutorialOverlay
           presentation="modal"
           steps={TUTORIAL_STEPS}
-          stepIndex={photoAddStep.stepIndex}
-          targetRect={photoAddTarget.rect}
-          onTargetPress={pickPhoto}
-          onSkip={skipTutorial}
-        />
-      )}
-
-      {/* Tutorial: spotlight "Edit tags" on the Photo view. */}
-      {editTagsStep.active && !arranging && view === 'photo' && !tagsOn && (
-        <TutorialOverlay
-          presentation="modal"
-          steps={TUTORIAL_STEPS}
-          stepIndex={editTagsStep.stepIndex}
-          targetRect={editTagsTarget.rect}
-          onTargetPress={() => { advanceTutorial('edit-tags'); setTagsOn(true); setSelectedDot(null); }}
+          stepIndex={photoAddStep.active ? photoAddStep.stepIndex : editTagsStep.stepIndex}
+          targetRect={photoAddStep.active ? photoAddTarget.rect : editTagsTarget.rect}
+          onTargetPress={photoAddStep.active
+            ? pickPhoto
+            : () => { advanceTutorial('edit-tags'); setTagsOn(true); setSelectedDot(null); }}
           onSkip={skipTutorial}
         />
       )}
